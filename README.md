@@ -38,6 +38,14 @@ cp .env.example .env
 npm run dev
 ```
 
+如需在开发时默认打开 DevTools，可使用：
+
+```bash
+OPEN_DEVTOOLS=1 npm run dev
+# 或
+npm run dev:tools
+```
+
 ### 4. 构建应用
 
 ```bash

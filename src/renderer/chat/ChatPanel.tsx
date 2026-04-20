@@ -10,10 +10,11 @@ export interface ChatPanelProps {
   isLoading: boolean;
   messages: ChatMessage[];
   onChange: (value: string) => void;
+  onClose: () => void;
   onSend: () => void;
 }
 
-export function ChatPanel({ input, isLoading, messages, onChange, onSend }: ChatPanelProps) {
+export function ChatPanel({ input, isLoading, messages, onChange, onClose, onSend }: ChatPanelProps) {
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -23,6 +24,12 @@ export function ChatPanel({ input, isLoading, messages, onChange, onSend }: Chat
 
   return (
     <>
+      <div className="chat-header">
+        <div className="chat-title">AI Pet</div>
+        <button className="panel-close" onClick={onClose} type="button" aria-label="关闭悬浮窗">
+          ×
+        </button>
+      </div>
       <div className="messages">
         {messages.map((message, index) => (
           <div key={`${message.role}-${index}`} className={`message ${message.role}`}>

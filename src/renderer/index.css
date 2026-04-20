@@ -4,36 +4,70 @@
   box-sizing: border-box;
 }
 
+html,
 body {
+  width: 100%;
+  height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
   background: transparent;
 }
 
+#root {
+  width: 100%;
+  height: 100%;
+}
+
 .app {
   width: 100vw;
   height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 16px;
-  overflow: hidden;
+  position: relative;
+  background: transparent;
+  overflow: visible;
 }
 
-/* 宠物区域 */
+.pet-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex-direction: column;
+  overflow: visible;
+}
+
 .pet-container {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #f0f4ff 0%, #e8f0fe 100%);
+  padding-bottom: 26px;
+  width: 100%;
+  overflow: visible;
+}
+
+.pet-shell {
+  width: 180px;
+  height: 180px;
+  position: relative;
+  z-index: 2;
+  overflow: visible;
 }
 
 .pet {
   width: 120px;
   height: 120px;
-  position: relative;
+  position: absolute;
+  left: 30px;
+  top: 34px;
   animation: bounce 2s ease-in-out infinite;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 @keyframes bounce {
@@ -44,10 +78,10 @@ body {
 .pet-body {
   width: 100%;
   height: 100%;
-  background: #4a9eff;
+  background: linear-gradient(180deg, #5bc0ff 0%, #2f84ff 100%);
   border-radius: 50%;
   position: relative;
-  box-shadow: 0 8px 32px rgba(74, 158, 255, 0.4);
+  box-shadow: 0 18px 36px rgba(26, 87, 181, 0.28);
 }
 
 .pet-eyes {
@@ -78,43 +112,95 @@ body {
   margin: 15px auto 0;
 }
 
-.pet.happy .pet-body { background: #5cb85c; }
-.pet.sad .pet-body { background: #999; }
-.pet.excited .pet-body { background: #f0ad4e; }
+.pet.happy .pet-body { background: linear-gradient(180deg, #67d36f 0%, #3ba95a 100%); }
+.pet.sad .pet-body { background: linear-gradient(180deg, #b7bcc6 0%, #8b929d 100%); }
+.pet.excited .pet-body { background: linear-gradient(180deg, #ffbf66 0%, #ff9966 100%); }
 
-/* 聊天区域 */
-.chat-container {
-  height: 250px;
-  border-top: 1px solid #e0e0e0;
+.chat-popover {
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 28px;
+  box-shadow: 0 24px 70px rgba(24, 39, 75, 0.24);
+  backdrop-filter: blur(18px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-window {
+  padding: 10px 14px 14px;
+}
+
+.debug-chip {
+  align-self: center;
+  margin-bottom: 10px;
+  max-width: calc(100vw - 16px);
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(19, 28, 43, 0.78);
+  color: #f7fbff;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+  pointer-events: none;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 18px 10px;
+}
+
+.chat-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #385074;
+}
+
+.panel-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: rgba(226, 233, 245, 0.9);
+  color: #516684;
+  border-radius: 999px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.panel-close:hover {
+  background: rgba(208, 219, 238, 0.95);
 }
 
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 4px 14px 12px;
 }
 
 .message {
   max-width: 80%;
-  padding: 8px 12px;
-  border-radius: 12px;
-  margin-bottom: 8px;
+  padding: 10px 13px;
+  border-radius: 14px;
+  margin-bottom: 10px;
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .message.user {
-  background: #4a9eff;
+  background: linear-gradient(180deg, #59b8ff 0%, #3c8fff 100%);
   color: white;
   margin-left: auto;
   border-bottom-right-radius: 4px;
 }
 
 .message.assistant {
-  background: #f0f0f0;
-  color: #333;
+  background: rgba(239, 244, 251, 0.95);
+  color: #27405f;
   margin-right: auto;
   border-bottom-left-radius: 4px;
 }
@@ -129,43 +215,46 @@ body {
 }
 
 .input-area {
-  padding: 12px;
-  border-top: 1px solid #e0e0e0;
+  padding: 14px;
+  border-top: 1px solid rgba(209, 220, 237, 0.7);
   display: flex;
   gap: 8px;
+  background: rgba(255, 255, 255, 0.55);
 }
 
 textarea {
   flex: 1;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 8px 12px;
+  border: 1px solid rgba(193, 208, 229, 0.95);
+  border-radius: 14px;
+  padding: 10px 12px;
   font-family: inherit;
   font-size: 14px;
   resize: none;
   outline: none;
+  background: rgba(255, 255, 255, 0.86);
+  color: #213247;
 }
 
 textarea:focus {
   border-color: #4a9eff;
 }
 
-button {
+.chat-popover button {
   padding: 8px 20px;
-  background: #4a9eff;
+  background: linear-gradient(180deg, #59b8ff 0%, #3c8fff 100%);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: 14px;
   cursor: pointer;
   font-weight: 500;
   transition: background 0.2s;
 }
 
-button:hover {
+.chat-popover button:hover {
   background: #3a8eef;
 }
 
-button:disabled {
+.chat-popover button:disabled {
   background: #ccc;
   cursor: not-allowed;
 }
