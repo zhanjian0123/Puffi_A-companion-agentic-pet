@@ -1,40 +1,21 @@
-import { AgentCore } from '../agent/core/AgentCore';
-import { KnowledgeBase } from '../knowledge/store/KnowledgeBase';
-import { MCPServer } from '../tools/mcp/MCPServer';
-import { ToolRegistry } from '../tools/registry/ToolRegistry';
+import { PythonAgentClient } from './python/PythonAgentClient';
+import { getPythonServiceConfig, type PythonServiceConfig } from './python/PythonServiceConfig';
 
 export interface AppServices {
-  agentCore: AgentCore;
-  knowledgeBase: KnowledgeBase;
-  mcpServer: MCPServer;
-  toolRegistry: ToolRegistry;
+  agentClient: PythonAgentClient;
+  pythonService: PythonServiceConfig;
 }
 
 export async function bootstrapApp(): Promise<AppServices> {
-  const knowledgeBasePath = process.env.KNOWLEDGE_BASE_PATH || './knowledge';
-  const knowledgeBase = new KnowledgeBase(knowledgeBasePath);
-  await knowledgeBase.initialize();
-
-  const mcpServer = new MCPServer();
-  await mcpServer.initialize();
-
-  const toolRegistry = new ToolRegistry({
-    searchKnowledge: async (query) => {
-      return knowledgeBase.search(query);
-    },
+  const pythonService = getPythonServiceConfig();
+  const agentClient = new PythonAgentClient({
+    baseUrl: pythonService.baseUrl,
   });
-  toolRegistry.registerDefaults();
 
-  const agentCore = new AgentCore({
-    knowledgeBase,
-    mcpServer,
-    toolRegistry,
-  });
+  console.log('[Python] Agent service configured:', pythonService.baseUrl);
 
   return {
-    agentCore,
-    knowledgeBase,
-    mcpServer,
-    toolRegistry,
+    agentClient,
+    pythonService,
   };
 }

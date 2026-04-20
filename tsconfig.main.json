@@ -16,10 +16,6 @@
   },
   "include": [
     "src/main/**/*",
-    "src/agent/**/*",
-    "src/knowledge/**/*",
-    "src/llm/**/*",
-    "src/tools/**/*",
     "src/shared/**/*"
   ],
   "exclude": ["node_modules", "src/renderer", "src/core"]

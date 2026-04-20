@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
-import type { AgentCore } from '../../agent/core/AgentCore';
+import type { PythonAgentClient } from '../python/PythonAgentClient';
 
 export interface WindowController {
   closePanel: () => void;
@@ -15,19 +15,19 @@ interface DragSession {
   startY: number;
 }
 
-export function registerIpcHandlers(agentCore: AgentCore, windows: WindowController): void {
+export function registerIpcHandlers(agentClient: PythonAgentClient, windows: WindowController): void {
   const dragSessions = new Map<number, DragSession>();
 
   ipcMain.handle('chat:message', async (_event, message: string) => {
-    return agentCore.processMessage(message);
+    return agentClient.chat(message);
   });
 
   ipcMain.handle('kb:search', async (_event, query: string) => {
-    return agentCore.searchKnowledge(query);
+    return agentClient.searchKnowledge(query);
   });
 
   ipcMain.handle('tool:invoke', async (_event, toolName: string, params: unknown) => {
-    return agentCore.invokeTool(toolName, params);
+    return agentClient.invokeTool(toolName, isRecord(params) ? params : {});
   });
 
   ipcMain.handle('window:set-panel-open', async (_event, isOpen: boolean) => {
@@ -105,4 +105,8 @@ export function registerIpcHandlers(agentCore: AgentCore, windows: WindowControl
     console.log('[Renderer]', message, payload ?? '');
     return { success: true };
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -81,6 +81,21 @@ ai-pet/
 - **状态管理**: Zustand
 - **构建**: Vite + electron-builder
 
+## Python Agent 规划
+
+项目已经补充了 `python/` 服务骨架，用于承接后续的：
+
+- Agent 编排
+- RAG 检索
+- 工具执行
+- 模型接入
+
+当前是迁移框架阶段，Electron 侧也增加了 Python HTTP client 骨架：
+
+- [python/README.md](/Users/breo/Desktop/ai-pet/python/README.md)
+- [PYTHON_MIGRATION.md](/Users/breo/Desktop/ai-pet/PYTHON_MIGRATION.md)
+- [src/main/python/PythonAgentClient.ts](/Users/breo/Desktop/ai-pet/src/main/python/PythonAgentClient.ts)
+
 ## MCP 服务器
 
 默认集成的 MCP 服务:

@@ -75,7 +75,7 @@ function openPanelWindow(): void {
 app.whenReady().then(async () => {
   console.log('[Main] App ready');
   const services = await bootstrapApp();
-  registerIpcHandlers(services.agentCore, {
+  registerIpcHandlers(services.agentClient, {
     openPanel: openPanelWindow,
     closePanel: closePanelWindow,
     isPanelOpen: isPanelWindowOpen,
