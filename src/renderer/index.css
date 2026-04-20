@@ -1,0 +1,171 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  background: transparent;
+}
+
+.app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* 宠物区域 */
+.pet-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #f0f4ff 0%, #e8f0fe 100%);
+}
+
+.pet {
+  width: 120px;
+  height: 120px;
+  position: relative;
+  animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.pet-body {
+  width: 100%;
+  height: 100%;
+  background: #4a9eff;
+  border-radius: 50%;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(74, 158, 255, 0.4);
+}
+
+.pet-eyes {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  padding-top: 35px;
+}
+
+.eye {
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  animation: blink 4s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 96%, 100% { height: 16px; }
+  98% { height: 2px; }
+}
+
+.pet-mouth {
+  width: 20px;
+  height: 10px;
+  border-bottom: 3px solid white;
+  border-radius: 0 0 20px 20px;
+  margin: 15px auto 0;
+}
+
+.pet.happy .pet-body { background: #5cb85c; }
+.pet.sad .pet-body { background: #999; }
+.pet.excited .pet-body { background: #f0ad4e; }
+
+/* 聊天区域 */
+.chat-container {
+  height: 250px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.message {
+  max-width: 80%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.message.user {
+  background: #4a9eff;
+  color: white;
+  margin-left: auto;
+  border-bottom-right-radius: 4px;
+}
+
+.message.assistant {
+  background: #f0f0f0;
+  color: #333;
+  margin-right: auto;
+  border-bottom-left-radius: 4px;
+}
+
+.message.typing {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.input-area {
+  padding: 12px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  gap: 8px;
+}
+
+textarea {
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: none;
+  outline: none;
+}
+
+textarea:focus {
+  border-color: #4a9eff;
+}
+
+button {
+  padding: 8px 20px;
+  background: #4a9eff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+button:hover {
+  background: #3a8eef;
+}
+
+button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
