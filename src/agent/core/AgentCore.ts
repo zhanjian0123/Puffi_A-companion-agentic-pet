@@ -1,22 +1,20 @@
 import OpenAI from 'openai';
-import { MCPServer } from '../../main/mcp/server';
-import { ToolRegistry } from '../../main/tools/registry';
+import type { KnowledgeBase } from '../../knowledge/store/KnowledgeBase';
+import type { MCPServer } from '../../tools/mcp/MCPServer';
+import type { Tool, ToolRegistry } from '../../tools/registry/ToolRegistry';
 
 export interface AgentConfig {
+  knowledgeBase: KnowledgeBase;
   mcpServer: MCPServer;
   toolRegistry: ToolRegistry;
 }
 
 export class AgentCore {
   private client: OpenAI | null = null;
-  private config: AgentConfig;
-  private systemPrompt: string;
-  private model: string;
+  private readonly systemPrompt: string;
+  private readonly model: string;
 
-  constructor(config: AgentConfig) {
-    this.config = config;
-
-    // 阿里云百炼平台配置
+  constructor(private readonly config: AgentConfig) {
     const apiKey = process.env.DASHSCOPE_API_KEY;
     const baseURL = process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
     this.model = process.env.DASHSCOPE_MODEL || 'qwen-plus';
@@ -38,25 +36,36 @@ export class AgentCore {
 保持回复简洁有趣，像一个真正的宠物伙伴。`;
   }
 
-  async processMessage(message: string): Promise<any> {
-    // 获取可用工具
+  async processMessage(message: string): Promise<{ response: string | null; action: any }> {
     const mcpTools = await this.config.mcpServer.listTools();
     const localTools = this.config.toolRegistry.list();
     const allTools = [...mcpTools, ...localTools];
 
-    // 如果有 API key，使用阿里云百炼
     if (this.client) {
       return this.processWithDashScope(message, allTools);
     }
 
-    // 否则返回本地响应
     return {
       response: '我还没有连接到 AI 服务。请配置 DASHSCOPE_API_KEY 或使用本地 Ollama。',
       action: null,
     };
   }
 
-  private async processWithDashScope(message: string, tools: any[]) {
+  async searchKnowledge(query: string): Promise<{ results: any[] }> {
+    const results = await this.config.knowledgeBase.search(query);
+    return { results };
+  }
+
+  async invokeTool(toolName: string, params: any): Promise<any> {
+    const localTool = this.config.toolRegistry.get(toolName);
+    if (localTool) {
+      return localTool.handler(params);
+    }
+
+    return { error: 'Tool not found' };
+  }
+
+  private async processWithDashScope(message: string, tools: Tool[]): Promise<{ response: string | null; action: any }> {
     try {
       const completion = await this.client!.chat.completions.create({
         model: this.model,
@@ -65,21 +74,21 @@ export class AgentCore {
           { role: 'system', content: this.systemPrompt },
           { role: 'user', content: message },
         ],
-        tools: tools.length > 0 ? tools.map((t) => ({
-          type: 'function',
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: { type: 'object', properties: {} },
-          },
-        })) : undefined,
+        tools: tools.length > 0
+          ? tools.map((tool) => ({
+              type: 'function' as const,
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.inputSchema,
+              },
+            }))
+          : undefined,
       });
 
-      const choice = completion.choices[0];
-      const assistantMessage = choice.message;
+      const assistantMessage = completion.choices[0]?.message;
 
-      // 检查是否有工具调用
-      if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+      if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
         const toolCall = assistantMessage.tool_calls[0];
         return {
           response: null,
@@ -92,7 +101,7 @@ export class AgentCore {
       }
 
       return {
-        response: assistantMessage.content,
+        response: assistantMessage?.content ?? '',
         action: null,
       };
     } catch (error) {
@@ -102,22 +111,5 @@ export class AgentCore {
         action: null,
       };
     }
-  }
-
-  async searchKnowledge(query: string) {
-    // TODO: 实现 RAG 搜索
-    return { results: [] };
-  }
-
-  async invokeTool(toolName: string, params: any) {
-    // 先尝试本地工具
-    const localTool = this.config.toolRegistry.get(toolName);
-    if (localTool) {
-      return localTool.handler(params);
-    }
-
-    // 再尝试 MCP 工具
-    // TODO: 解析 toolName 获取 serverName
-    return { error: 'Tool not found' };
   }
 }

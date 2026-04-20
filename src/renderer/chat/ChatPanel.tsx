@@ -1,0 +1,49 @@
+import type { KeyboardEvent } from 'react';
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatPanelProps {
+  input: string;
+  isLoading: boolean;
+  messages: ChatMessage[];
+  onChange: (value: string) => void;
+  onSend: () => void;
+}
+
+export function ChatPanel({ input, isLoading, messages, onChange, onSend }: ChatPanelProps) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      onSend();
+    }
+  };
+
+  return (
+    <>
+      <div className="messages">
+        {messages.map((message, index) => (
+          <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
+            {message.content}
+          </div>
+        ))}
+        {isLoading ? <div className="message assistant typing">...</div> : null}
+      </div>
+
+      <div className="input-area">
+        <textarea
+          value={input}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="和你的宠物聊天..."
+          rows={3}
+        />
+        <button onClick={onSend} disabled={isLoading}>
+          发送
+        </button>
+      </div>
+    </>
+  );
+}

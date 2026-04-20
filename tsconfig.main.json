@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "CommonJS",
     "lib": ["ES2022"],
-    "outDir": "./dist/main",
+    "outDir": "./dist",
     "rootDir": "./src",
     "skipLibCheck": true,
     "strict": true,
@@ -14,6 +14,13 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["src/main/**/*", "src/core/**/*"],
-  "exclude": ["node_modules", "src/renderer"]
+  "include": [
+    "src/main/**/*",
+    "src/agent/**/*",
+    "src/knowledge/**/*",
+    "src/llm/**/*",
+    "src/tools/**/*",
+    "src/shared/**/*"
+  ],
+  "exclude": ["node_modules", "src/renderer", "src/core"]
 }

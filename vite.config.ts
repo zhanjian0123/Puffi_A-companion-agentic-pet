@@ -17,6 +17,8 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host: '127.0.0.1',
     port: 5173,
+    strictPort: true, // 端口被占用时失败而不是自动切换
   },
 });
