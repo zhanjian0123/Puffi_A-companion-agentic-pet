@@ -16,6 +16,20 @@ The intended responsibility split is:
 
 ## Current Status
 
-This scaffold is intentionally lightweight and not yet wired into the Electron runtime.
-It exists to support a staged migration from the current TypeScript-side agent into a
-dedicated Python service.
+This backend is now centered on the OpenAI Agents SDK runtime and is intended to be the
+main agent orchestration layer for AI Pet.
+
+## OpenAI Agents SDK
+
+The backend now uses the OpenAI Agents SDK as its primary agent runtime.
+
+- Install dependency: `pip install openai-agents`
+- Set `OPENAI_API_KEY`
+- Optional: set `OPENAI_MODEL` (default: `gpt-5.4`)
+
+The `/chat` route runs through `Agent + Runner` from the SDK and uses function tools for:
+
+- knowledge search
+- todo management
+- notifications
+- screenshot requests

@@ -4,15 +4,18 @@
   "description": "AI Desktop Pet - Personal Agent with Knowledge Base",
   "main": "dist/main/main.js",
   "scripts": {
+    "clean": "npm run clean:dist && npm run clean:release",
+    "clean:dist": "rm -rf dist",
+    "clean:release": "rm -rf release",
     "dev": "concurrently -k \"npm run dev:renderer\" \"npm run dev:main\"",
     "dev:tools": "OPEN_DEVTOOLS=1 npm run dev",
     "dev:main": "sh -c 'sleep 3 && NODE_ENV=development tsc -p tsconfig.main.json && NODE_ENV=development electron .'",
     "dev:renderer": "NODE_ENV=development vite --host 127.0.0.1",
     "dev:python": "python3 -m uvicorn python.main:app --host 127.0.0.1 --port 8787",
-    "build": "npm run build:main && npm run build:renderer",
+    "build": "npm run clean:dist && npm run build:main && npm run build:renderer",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
-    "package": "electron-builder --mac --win --linux",
+    "package": "npm run build && electron-builder --mac --win --linux",
     "lint": "eslint src --ext .ts,.tsx"
   },
   "keywords": [
