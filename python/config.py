@@ -8,6 +8,8 @@ class Settings:
     port: int = int(os.getenv("AI_PET_AGENT_PORT", "8787"))
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
+    openai_base_url: str | None = os.getenv("OPENAI_BASE_URL")
+    openai_websocket_base_url: str | None = os.getenv("OPENAI_WEBSOCKET_BASE_URL")
     knowledge_base_path: str = os.getenv("KNOWLEDGE_BASE_PATH", "./knowledge")
 
 

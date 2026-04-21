@@ -8,11 +8,14 @@ from rag.knowledge_base import knowledge_base
 from tools.registry import tool_registry
 
 try:
-    from agents import Agent, Runner, function_tool
+    from agents import Agent, Runner, function_tool, set_default_openai_client
+    from openai import AsyncOpenAI
 except ImportError:  # pragma: no cover - optional dependency
     Agent = None
     Runner = None
     function_tool = None
+    set_default_openai_client = None
+    AsyncOpenAI = None
 
 
 SYSTEM_PROMPT = """你是一个桌面宠物助手，性格活泼可爱。
@@ -27,6 +30,7 @@ SYSTEM_PROMPT = """你是一个桌面宠物助手，性格活泼可爱。
 
 class OpenAIAgentsService:
     def __init__(self) -> None:
+        self._configure_client()
         self._agent = self._build_agent() if self.is_available else None
 
     @property
@@ -36,6 +40,8 @@ class OpenAIAgentsService:
             and Agent is not None
             and Runner is not None
             and function_tool is not None
+            and set_default_openai_client is not None
+            and AsyncOpenAI is not None
         )
 
     async def chat(self, message: str) -> str:
@@ -64,6 +70,21 @@ class OpenAIAgentsService:
             model=settings.openai_model,
             tools=tools,
         )
+
+    def _configure_client(self) -> None:
+        if (
+            not settings.openai_api_key
+            or AsyncOpenAI is None
+            or set_default_openai_client is None
+        ):
+            return
+
+        client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            websocket_base_url=settings.openai_websocket_base_url,
+        )
+        set_default_openai_client(client)
 
     def _build_tools(self) -> list[Any]:
         if function_tool is None:
