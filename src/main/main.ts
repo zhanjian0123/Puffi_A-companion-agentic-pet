@@ -77,7 +77,7 @@ function openPanelWindow(): void {
   };
 
   if (nextPanelWindow.webContents.isLoadingMainFrame()) {
-    nextPanelWindow.once('ready-to-show', showPanel);
+    nextPanelWindow.webContents.once('did-finish-load', showPanel);
     return;
   }
 

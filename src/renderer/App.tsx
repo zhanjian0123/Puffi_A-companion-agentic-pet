@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { getElectronApi } from './electronApi';
+import { useEffect, useState } from 'react';
+import { getElectronApi, requireElectronApi } from './electronApi';
 import { ChatPanel, type ChatMessage } from './chat/ChatPanel';
 import { PetAvatar } from './pet/PetAvatar';
+import { ENABLE_DESKTOP_DEBUG_LOGS } from '../shared/devFlags';
 
 type PetEmotion = 'happy' | 'neutral' | 'sad';
 
@@ -12,14 +13,21 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [emotion, setEmotion] = useState<PetEmotion>('neutral');
 
+  useEffect(() => {
+    if (ENABLE_DESKTOP_DEBUG_LOGS) {
+      console.log('[Renderer] App mounted', {
+        mode,
+        hasElectronApi: !!getElectronApi(),
+      });
+    }
+  }, [mode]);
+
   const setPanelOpen = async (nextOpen: boolean) => {
-    const api = getElectronApi();
-    await api?.setPanelOpen(nextOpen);
+    await requireElectronApi().setPanelOpen(nextOpen);
   };
 
   const togglePanel = async () => {
-    const api = getElectronApi();
-    await api?.togglePanel();
+    await requireElectronApi().togglePanel();
   };
 
   const sendMessage = async () => {
@@ -34,12 +42,7 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      const api = getElectronApi();
-      if (!api) {
-        throw new Error('Electron preload API 未注入，请检查桌面端主进程是否正常启动。');
-      }
-
-      const response = await api.chat(message);
+      const response = await requireElectronApi().chat(message);
 
       const assistantMessage: ChatMessage = {
         role: 'assistant',

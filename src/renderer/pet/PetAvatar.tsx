@@ -1,5 +1,6 @@
-import { useRef, type MouseEvent as ReactMouseEvent } from 'react';
-import { getElectronApi } from '../electronApi';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { requireElectronApi } from '../electronApi';
+import { ENABLE_DESKTOP_DEBUG_LOGS } from '../../shared/devFlags';
 
 export interface PetAvatarProps {
   emotion: 'happy' | 'neutral' | 'sad' | 'excited';
@@ -7,35 +8,55 @@ export interface PetAvatarProps {
 }
 
 export function PetAvatar({ emotion, onActivate }: PetAvatarProps) {
+  const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef({
     active: false,
-    button: 0,
     moved: false,
+    suppressClick: false,
     startX: 0,
     startY: 0,
-    lastX: 0,
-    lastY: 0,
   });
 
-  const handleMouseDown = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
+  useEffect(() => {
+    return () => {
+      dragRef.current.active = false;
+    };
+  }, []);
 
-    const hostWindow = event.currentTarget.ownerDocument.defaultView;
-    if (!hostWindow) {
+  const cleanupDrag = () => {
+    dragRef.current = {
+      active: false,
+      moved: false,
+      suppressClick: dragRef.current.suppressClick,
+      startX: 0,
+      startY: 0,
+    };
+    setIsDragging(false);
+    void requireElectronApi().endWindowDrag();
+  };
+
+  const handleMouseDown = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) {
       return;
     }
 
+    if (ENABLE_DESKTOP_DEBUG_LOGS) {
+      console.log('[Renderer] pet mousedown', {
+        screenX: event.screenX,
+        screenY: event.screenY,
+      });
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
     dragRef.current = {
       active: true,
-      button: event.button,
       moved: false,
+      suppressClick: false,
       startX: event.screenX,
       startY: event.screenY,
-      lastX: event.screenX,
-      lastY: event.screenY,
     };
-    void getElectronApi()?.startWindowDrag(event.screenX, event.screenY);
+    void requireElectronApi().startWindowDrag(event.screenX, event.screenY);
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!dragRef.current.active) {
@@ -44,49 +65,55 @@ export function PetAvatar({ emotion, onActivate }: PetAvatarProps) {
 
       const totalDx = moveEvent.screenX - dragRef.current.startX;
       const totalDy = moveEvent.screenY - dragRef.current.startY;
-      const dx = moveEvent.screenX - dragRef.current.lastX;
-      const dy = moveEvent.screenY - dragRef.current.lastY;
 
-      if (totalDx === 0 && totalDy === 0 && dx === 0 && dy === 0) {
+      if (totalDx === 0 && totalDy === 0) {
         return;
       }
 
       if (Math.abs(totalDx) > 6 || Math.abs(totalDy) > 6) {
         dragRef.current.moved = true;
+        dragRef.current.suppressClick = true;
+        setIsDragging(true);
       }
 
-      dragRef.current.lastX = moveEvent.screenX;
-      dragRef.current.lastY = moveEvent.screenY;
-
-      void getElectronApi()?.moveWindowDragTo(moveEvent.screenX, moveEvent.screenY);
+      void requireElectronApi().moveWindowDragTo(moveEvent.screenX, moveEvent.screenY);
     };
 
-    const cleanup = () => {
-      hostWindow.removeEventListener('mousemove', handleMouseMove);
-      hostWindow.removeEventListener('mouseup', handleMouseUp, true);
-      dragRef.current.active = false;
-      void getElectronApi()?.endWindowDrag();
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp, true);
+      cleanupDrag();
     };
 
-    const handleMouseUp = (upEvent: MouseEvent) => {
-      const shouldActivate = dragRef.current.button === 0 && !dragRef.current.moved;
-      cleanup();
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp, true);
+  };
 
-      if (shouldActivate) {
-        upEvent.preventDefault();
-        onActivate?.();
-      }
-    };
+  const handleClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (ENABLE_DESKTOP_DEBUG_LOGS) {
+      console.log('[Renderer] pet click', {
+        suppressClick: dragRef.current.suppressClick,
+      });
+    }
 
-    hostWindow.addEventListener('mousemove', handleMouseMove);
-    hostWindow.addEventListener('mouseup', handleMouseUp, true);
+    if (dragRef.current.suppressClick) {
+      event.preventDefault();
+      event.stopPropagation();
+      dragRef.current.suppressClick = false;
+      return;
+    }
+
+    onActivate?.();
   };
 
   return (
     <div className="pet-shell">
       <button
-        className={`pet ${emotion}`}
+        className={`pet ${emotion} ${isDragging ? 'dragging' : ''}`}
+        draggable={false}
+        onClick={handleClick}
         onContextMenu={(event) => event.preventDefault()}
+        onDragStart={(event) => event.preventDefault()}
         onMouseDown={handleMouseDown}
         type="button"
         aria-label="唤醒宠物助手"

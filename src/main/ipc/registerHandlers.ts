@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import type { PythonAgentClient } from '../python/PythonAgentClient';
+import { ENABLE_DESKTOP_DEBUG_LOGS } from '../../shared/devFlags';
 
 export interface WindowController {
   closePanel: () => void;
@@ -10,13 +11,20 @@ export interface WindowController {
 }
 
 interface DragSession {
-  startBounds: Electron.Rectangle;
+  startWindowX: number;
+  startWindowY: number;
   startX: number;
   startY: number;
 }
 
 export function registerIpcHandlers(agentClient: PythonAgentClient, windows: WindowController): void {
   const dragSessions = new Map<number, DragSession>();
+
+  ipcMain.on('bridge:ready', () => {
+    if (ENABLE_DESKTOP_DEBUG_LOGS) {
+      console.log('[Main] Preload bridge ready');
+    }
+  });
 
   ipcMain.handle('chat:message', async (_event, message: string) => {
     return agentClient.chat(message);
@@ -33,6 +41,9 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
   });
 
   ipcMain.handle('window:toggle-panel', async () => {
+    if (ENABLE_DESKTOP_DEBUG_LOGS) {
+      console.log('[Main] Toggle panel request');
+    }
     windows.togglePanel();
     return { success: true, isOpen: windows.isPanelOpen() };
   });
@@ -40,11 +51,16 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
   ipcMain.handle('window:drag-start', async (event, point: { x: number; y: number }) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (window) {
+      const [startWindowX, startWindowY] = window.getPosition();
       dragSessions.set(event.sender.id, {
-        startBounds: window.getBounds(),
+        startWindowX,
+        startWindowY,
         startX: point.x,
         startY: point.y,
       });
+      if (ENABLE_DESKTOP_DEBUG_LOGS) {
+        console.log('[Main] Drag start', point.x, point.y);
+      }
     }
 
     return { success: true };
@@ -57,11 +73,11 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     if (window && session) {
       const dx = point.x - session.startX;
       const dy = point.y - session.startY;
-      window.setBounds({
-        ...session.startBounds,
-        x: Math.round(session.startBounds.x + dx),
-        y: Math.round(session.startBounds.y + dy),
-      });
+      window.setPosition(
+        Math.round(session.startWindowX + dx),
+        Math.round(session.startWindowY + dy),
+        false
+      );
       windows.syncPanelToPet();
     }
 
@@ -69,6 +85,9 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
   });
 
   ipcMain.handle('window:drag-end', async (event) => {
+    if (ENABLE_DESKTOP_DEBUG_LOGS) {
+      console.log('[Main] Drag end');
+    }
     dragSessions.delete(event.sender.id);
     return { success: true };
   });

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, screen } from 'electron';
 import path from 'path';
-import { OPEN_DEVTOOLS } from './devFlags';
+import { ENABLE_DESKTOP_DEBUG_LOGS, OPEN_DEVTOOLS } from '../../shared/devFlags';
 
 const PET_WINDOW_SIZE = { width: 220, height: 240 };
 const PANEL_WINDOW_SIZE = { width: 380, height: 460 };
@@ -22,6 +22,36 @@ function loadRenderer(window: BrowserWindow, mode: 'pet' | 'panel'): void {
       query: { mode },
     });
   }
+}
+
+function attachRendererDiagnostics(window: BrowserWindow, label: 'Main' | 'Panel'): void {
+  if (!ENABLE_DESKTOP_DEBUG_LOGS) {
+    return;
+  }
+
+  window.webContents.on('console-message', (_event, _level, message) => {
+    console.log(`[${label} Renderer]`, message);
+  });
+
+  window.webContents.on('did-finish-load', () => {
+    void window.webContents
+      .executeJavaScript(
+        `(() => ({
+          href: window.location.href,
+          mode: new URLSearchParams(window.location.search).get('mode'),
+          hasElectronApi: !!window.electronAPI,
+          rootExists: !!document.getElementById('root'),
+          petExists: !!document.querySelector('.pet'),
+        }))()`,
+        true
+      )
+      .then((result) => {
+        console.log(`[${label}] Renderer state`, result);
+      })
+      .catch((error) => {
+        console.error(`[${label}] Renderer inspection failed:`, error);
+      });
+  });
 }
 
 export function createPetWindow(): BrowserWindow {
@@ -46,6 +76,7 @@ export function createPetWindow(): BrowserWindow {
   });
 
   loadRenderer(window, 'pet');
+  attachRendererDiagnostics(window, 'Main');
 
   window.webContents.on('did-fail-load', (_event, errorCode, errorDesc) => {
     console.error('[Main] Page load failed:', errorCode, errorDesc);
@@ -82,6 +113,7 @@ export function createPanelWindow(): BrowserWindow {
   });
 
   loadRenderer(window, 'panel');
+  attachRendererDiagnostics(window, 'Panel');
 
   window.webContents.on('did-fail-load', (_event, errorCode, errorDesc) => {
     console.error('[Panel] Page load failed:', errorCode, errorDesc);
@@ -111,15 +143,7 @@ export function positionPanelWindow(panelWindow: BrowserWindow, petWindow: Brows
   );
   const boundedY = Math.max(nextY, workArea.y + 12);
 
-  panelWindow.setBounds(
-    {
-      x: boundedX,
-      y: boundedY,
-      width: PANEL_WINDOW_SIZE.width,
-      height: PANEL_WINDOW_SIZE.height,
-    },
-    false
-  );
+  panelWindow.setPosition(boundedX, boundedY, false);
   panelWindow.setAlwaysOnTop(true, 'floating');
   petWindow.setAlwaysOnTop(true, 'screen-saver');
 }
