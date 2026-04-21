@@ -13,10 +13,8 @@ function syncPanelWindowToPet(): void {
 }
 
 function closePanelWindow(): void {
-  console.log('[Main] closePanelWindow called');
   if (panelWindow && !panelWindow.isDestroyed()) {
     panelWindow.hide();
-    console.log('[Main] Panel window hidden');
   }
 }
 
@@ -33,39 +31,53 @@ function togglePanelWindow(): void {
   openPanelWindow();
 }
 
-function openPanelWindow(): void {
-  console.log('[Main] openPanelWindow called');
+function attachPetWindow(window: BrowserWindow): void {
+  window.on('move', () => {
+    syncPanelWindowToPet();
+  });
+  window.on('closed', () => {
+    petWindow = null;
+    closePanelWindow();
+  });
+}
+
+function ensurePanelWindow(): BrowserWindow | null {
   if (!petWindow || petWindow.isDestroyed()) {
-    console.log('[Main] openPanelWindow aborted: petWindow missing');
+    return null;
+  }
+
+  if (!panelWindow || panelWindow.isDestroyed()) {
+    panelWindow = createPanelWindow();
+    panelWindow.on('closed', () => {
+      panelWindow = null;
+    });
+  }
+
+  return panelWindow;
+}
+
+function openPanelWindow(): void {
+  if (!petWindow || petWindow.isDestroyed()) {
+    return;
+  }
+
+  const nextPanelWindow = ensurePanelWindow();
+  if (!nextPanelWindow) {
     return;
   }
 
   const showPanel = () => {
-    if (!panelWindow || panelWindow.isDestroyed()) {
-      console.log('[Main] showPanel aborted: panelWindow missing');
+    if (!petWindow || petWindow.isDestroyed() || !panelWindow || panelWindow.isDestroyed()) {
       return;
     }
 
-    positionPanelWindow(panelWindow, petWindow!);
+    positionPanelWindow(panelWindow, petWindow);
     panelWindow.show();
     panelWindow.focus();
-    console.log('[Main] Panel window shown');
   };
 
-  if (!panelWindow || panelWindow.isDestroyed()) {
-    console.log('[Main] Creating panelWindow');
-    panelWindow = createPanelWindow();
-    panelWindow.on('closed', () => {
-      console.log('[Main] Panel window closed');
-      panelWindow = null;
-    });
-    panelWindow.once('ready-to-show', showPanel);
-    return;
-  }
-
-  if (panelWindow.webContents.isLoadingMainFrame()) {
-    console.log('[Main] Panel window still loading');
-    panelWindow.once('ready-to-show', showPanel);
+  if (nextPanelWindow.webContents.isLoadingMainFrame()) {
+    nextPanelWindow.once('ready-to-show', showPanel);
     return;
   }
 
@@ -84,23 +96,13 @@ app.whenReady().then(async () => {
   });
 
   petWindow = createPetWindow();
-  petWindow.on('move', () => {
-    syncPanelWindowToPet();
-  });
-  petWindow.on('closed', () => {
-    petWindow = null;
-  });
+  attachPetWindow(petWindow);
   console.log('[Main] Core initialized');
 
   app.on('activate', () => {
     if (!petWindow || petWindow.isDestroyed()) {
       petWindow = createPetWindow();
-      petWindow.on('move', () => {
-        syncPanelWindowToPet();
-      });
-      petWindow.on('closed', () => {
-        petWindow = null;
-      });
+      attachPetWindow(petWindow);
     }
   });
 });
@@ -112,7 +114,6 @@ app.on('window-all-closed', () => {
   }
 });
 
-// 错误处理
 process.on('uncaughtException', (error) => {
   console.error('[Main] Uncaught exception:', error);
 });

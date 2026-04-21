@@ -1,35 +1,23 @@
 # Python Agent Service
 
-This directory contains the next-stage backend architecture for AI Pet.
+当前 Python 后端已经收缩为最小主链，只保留两件事：
 
-The intended responsibility split is:
+- `GET /health`：检查 SDK 和密钥是否可用
+- `POST /chat`：通过 OpenAI Agents SDK 执行一次对话
 
-- Electron/React: windows, tray, pet interaction, local desktop UX
-- Python service: agent orchestration, RAG, tool execution, model access
+## Core Files
 
-## Planned API
+- `main.py`：Uvicorn 入口
+- `app.py`：FastAPI 路由
+- `service.py`：OpenAI Agents SDK 封装
+- `schemas.py`：请求与响应模型
+- `config.py`：环境变量加载
 
-- `GET /health`
-- `POST /chat`
-- `POST /knowledge/search`
-- `POST /tools/invoke`
+## Start
 
-## Current Status
+在项目根目录执行：
 
-This backend is now centered on the OpenAI Agents SDK runtime and is intended to be the
-main agent orchestration layer for AI Pet.
-
-## OpenAI Agents SDK
-
-The backend now uses the OpenAI Agents SDK as its primary agent runtime.
-
-- Install dependency: `pip install openai-agents`
-- Set `OPENAI_API_KEY`
-- Optional: set `OPENAI_MODEL` (default: `gpt-5.4`)
-
-The `/chat` route runs through `Agent + Runner` from the SDK and uses function tools for:
-
-- knowledge search
-- todo management
-- notifications
-- screenshot requests
+```bash
+cd python
+../.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8787 --log-level debug
+```

@@ -2,6 +2,12 @@ export interface PythonAgentClientOptions {
   baseUrl: string;
 }
 
+export interface HealthResult {
+  configured: boolean;
+  runtime: string;
+  status: string;
+}
+
 export interface ChatResult {
   response: string | null;
   action?: unknown;
@@ -10,36 +16,16 @@ export interface ChatResult {
 export class PythonAgentClient {
   constructor(private readonly options: PythonAgentClientOptions) {}
 
-  async health(): Promise<{ status: string }> {
-    const response = await fetch(`${this.options.baseUrl}/health`);
-    return this.readJson<{ status: string }>(response);
+  async health(): Promise<HealthResult> {
+    return this.requestJson<HealthResult>('/health');
   }
 
   async chat(message: string): Promise<ChatResult> {
-    const response = await fetch(`${this.options.baseUrl}/chat`, {
+    return this.requestJson<ChatResult>('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
     });
-    return this.readJson<ChatResult>(response);
-  }
-
-  async searchKnowledge(query: string, limit = 5): Promise<{ results: unknown[] }> {
-    const response = await fetch(`${this.options.baseUrl}/knowledge/search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, limit }),
-    });
-    return this.readJson<{ results: unknown[] }>(response);
-  }
-
-  async invokeTool(toolName: string, params: Record<string, unknown>): Promise<{ result: unknown }> {
-    const response = await fetch(`${this.options.baseUrl}/tools/invoke`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toolName, params }),
-    });
-    return this.readJson<{ result: unknown }>(response);
   }
 
   private async readJson<T>(response: Response): Promise<T> {
@@ -48,5 +34,21 @@ export class PythonAgentClient {
     }
 
     return (await response.json()) as T;
+  }
+
+  private async requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+    try {
+      const response = await fetch(`${this.options.baseUrl}${path}`, init);
+      return this.readJson<T>(response);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'fetch failed') {
+        throw new Error(
+          `Python agent service is not reachable at ${this.options.baseUrl}. ` +
+            'Please start the Python backend with `npm run dev:python`.'
+        );
+      }
+
+      throw error;
+    }
   }
 }

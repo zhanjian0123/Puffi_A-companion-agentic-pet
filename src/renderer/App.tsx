@@ -1,64 +1,52 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { getElectronApi } from './electronApi';
-import { AppShell } from './app/AppShell';
 import { ChatPanel, type ChatMessage } from './chat/ChatPanel';
 import { PetAvatar } from './pet/PetAvatar';
-import { usePetStore } from './store/petStore';
-import { SHOW_PET_DEBUG } from '../main/app/devFlags';
+
+type PetEmotion = 'happy' | 'neutral' | 'sad';
 
 export default function App() {
   const mode = new URLSearchParams(window.location.search).get('mode') === 'panel' ? 'panel' : 'pet';
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [debugStatus, setDebugStatus] = useState('idle');
-  const emotion = usePetStore((state) => state.emotion);
-  const { setEmotion, setAction } = usePetStore();
-
-  const pushDebug = (message: string, payload?: unknown) => {
-    const api = getElectronApi();
-    setDebugStatus(message);
-    console.log('[Renderer]', message, payload ?? '');
-    void api?.debugLog(message, payload);
-  };
+  const [emotion, setEmotion] = useState<PetEmotion>('neutral');
 
   const setPanelOpen = async (nextOpen: boolean) => {
     const api = getElectronApi();
-    pushDebug('setPanelOpen', { nextOpen });
     await api?.setPanelOpen(nextOpen);
   };
 
   const togglePanel = async () => {
     const api = getElectronApi();
-    pushDebug('togglePanel');
     await api?.togglePanel();
   };
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    const message = input.trim();
+    if (!message) {
+      return;
+    }
 
-    const userMessage: ChatMessage = { role: 'user', content: input };
+    const userMessage: ChatMessage = { role: 'user', content: message };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
-    setAction('thinking');
 
     try {
       const api = getElectronApi();
       if (!api) {
-        throw new Error('Electron API 未注入，preload 和 fallback 都没有生效。');
+        throw new Error('Electron preload API 未注入，请检查桌面端主进程是否正常启动。');
       }
 
-      const response = await api.chat(input);
+      const response = await api.chat(message);
 
       const assistantMessage: ChatMessage = {
         role: 'assistant',
-        content: response?.response || '...'
+        content: response?.response || '...',
       };
       setMessages((prev) => [...prev, assistantMessage]);
-
       setEmotion('happy');
-      setAction('talking');
     } catch (error) {
       console.error('Chat error:', error);
       setMessages((prev) => [
@@ -71,24 +59,13 @@ export default function App() {
       setEmotion('sad');
     } finally {
       setIsLoading(false);
-      setAction('idle');
     }
   };
 
-  return (
-    <AppShell
-      mode={mode}
-      pet={
-        mode === 'pet' ? (
-          <PetAvatar
-            emotion={emotion}
-            onActivate={() => void togglePanel()}
-            onDebug={(message) => pushDebug(message)}
-          />
-        ) : undefined
-      }
-      chat={
-        mode === 'panel' ? (
+  if (mode === 'panel') {
+    return (
+      <div className="app panel-window">
+        <div className="chat-popover">
           <ChatPanel
             input={input}
             isLoading={isLoading}
@@ -97,9 +74,18 @@ export default function App() {
             onClose={() => void setPanelOpen(false)}
             onSend={sendMessage}
           />
-        ) : undefined
-      }
-      debug={mode === 'pet' && SHOW_PET_DEBUG ? debugStatus : undefined}
-    />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app pet-window">
+      <div className="pet-stage">
+        <div className="pet-container">
+          <PetAvatar emotion={emotion} onActivate={() => void togglePanel()} />
+        </div>
+      </div>
+    </div>
   );
 }

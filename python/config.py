@@ -1,5 +1,25 @@
 from dataclasses import dataclass
 import os
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional dependency
+    load_dotenv = None
+
+
+def _load_env_files() -> None:
+    if load_dotenv is None:
+        return
+
+    python_dir = Path(__file__).resolve().parent
+    project_root = python_dir.parent
+
+    load_dotenv(project_root / ".env", override=False)
+    load_dotenv(python_dir / ".env", override=False)
+
+
+_load_env_files()
 
 
 @dataclass(slots=True)
@@ -10,7 +30,6 @@ class Settings:
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
     openai_base_url: str | None = os.getenv("OPENAI_BASE_URL")
     openai_websocket_base_url: str | None = os.getenv("OPENAI_WEBSOCKET_BASE_URL")
-    knowledge_base_path: str = os.getenv("KNOWLEDGE_BASE_PATH", "./knowledge")
 
 
 settings = Settings()

@@ -18,5 +18,5 @@
     "src/main/**/*",
     "src/shared/**/*"
   ],
-  "exclude": ["node_modules", "src/renderer", "src/core"]
+  "exclude": ["node_modules", "src/renderer"]
 }

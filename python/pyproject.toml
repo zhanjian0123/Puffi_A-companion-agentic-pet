@@ -1,13 +1,14 @@
 [project]
 name = "ai-pet-agent-service"
 version = "0.1.0"
-description = "Python agent service for AI Pet desktop assistant"
-requires-python = ">=3.11"
+description = "Minimal Python agent service for AI Pet desktop assistant"
+requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
   "pydantic>=2.8.0",
   "openai-agents",
+  "python-dotenv>=1.0.1",
 ]
 
 [project.optional-dependencies]

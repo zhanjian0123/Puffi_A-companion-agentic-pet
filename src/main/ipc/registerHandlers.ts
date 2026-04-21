@@ -22,16 +22,7 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     return agentClient.chat(message);
   });
 
-  ipcMain.handle('kb:search', async (_event, query: string) => {
-    return agentClient.searchKnowledge(query);
-  });
-
-  ipcMain.handle('tool:invoke', async (_event, toolName: string, params: unknown) => {
-    return agentClient.invokeTool(toolName, isRecord(params) ? params : {});
-  });
-
   ipcMain.handle('window:set-panel-open', async (_event, isOpen: boolean) => {
-    console.log('[IPC] window:set-panel-open', { isOpen });
     if (isOpen) {
       windows.openPanel();
     } else {
@@ -42,24 +33,8 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
   });
 
   ipcMain.handle('window:toggle-panel', async () => {
-    console.log('[IPC] window:toggle-panel');
     windows.togglePanel();
     return { success: true, isOpen: windows.isPanelOpen() };
-  });
-
-  ipcMain.handle('window:drag-by', async (event, delta: { dx: number; dy: number }) => {
-    console.log('[IPC] window:drag-by', delta);
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (window) {
-      const bounds = window.getBounds();
-      window.setBounds({
-        ...bounds,
-        x: Math.round(bounds.x + delta.dx),
-        y: Math.round(bounds.y + delta.dy),
-      });
-    }
-
-    return { success: true };
   });
 
   ipcMain.handle('window:drag-start', async (event, point: { x: number; y: number }) => {
@@ -70,7 +45,6 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
         startX: point.x,
         startY: point.y,
       });
-      console.log('[IPC] window:drag-start', point);
     }
 
     return { success: true };
@@ -89,7 +63,6 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
         y: Math.round(session.startBounds.y + dy),
       });
       windows.syncPanelToPet();
-      console.log('[IPC] window:drag-move-to', { point, dx, dy });
     }
 
     return { success: true };
@@ -97,16 +70,6 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
 
   ipcMain.handle('window:drag-end', async (event) => {
     dragSessions.delete(event.sender.id);
-    console.log('[IPC] window:drag-end');
     return { success: true };
   });
-
-  ipcMain.handle('debug:log', async (_event, message: string, payload?: unknown) => {
-    console.log('[Renderer]', message, payload ?? '');
-    return { success: true };
-  });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

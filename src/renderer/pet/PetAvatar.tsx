@@ -4,10 +4,9 @@ import { getElectronApi } from '../electronApi';
 export interface PetAvatarProps {
   emotion: 'happy' | 'neutral' | 'sad' | 'excited';
   onActivate?: () => void;
-  onDebug?: (message: string) => void;
 }
 
-export function PetAvatar({ emotion, onActivate, onDebug }: PetAvatarProps) {
+export function PetAvatar({ emotion, onActivate }: PetAvatarProps) {
   const dragRef = useRef({
     active: false,
     button: 0,
@@ -21,11 +20,9 @@ export function PetAvatar({ emotion, onActivate, onDebug }: PetAvatarProps) {
   const handleMouseDown = (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    onDebug?.(`mouseDown button=${event.button} x=${event.screenX} y=${event.screenY}`);
 
     const hostWindow = event.currentTarget.ownerDocument.defaultView;
     if (!hostWindow) {
-      onDebug?.('mouseDown aborted: no hostWindow');
       return;
     }
 
@@ -56,7 +53,6 @@ export function PetAvatar({ emotion, onActivate, onDebug }: PetAvatarProps) {
 
       if (Math.abs(totalDx) > 6 || Math.abs(totalDy) > 6) {
         dragRef.current.moved = true;
-        onDebug?.(`drag totalDx=${totalDx} totalDy=${totalDy}`);
       }
 
       dragRef.current.lastX = moveEvent.screenX;
@@ -74,12 +70,10 @@ export function PetAvatar({ emotion, onActivate, onDebug }: PetAvatarProps) {
 
     const handleMouseUp = (upEvent: MouseEvent) => {
       const shouldActivate = dragRef.current.button === 0 && !dragRef.current.moved;
-      onDebug?.(`mouseUp moved=${dragRef.current.moved} activate=${shouldActivate}`);
       cleanup();
 
       if (shouldActivate) {
         upEvent.preventDefault();
-        onDebug?.('trigger onActivate');
         onActivate?.();
       }
     };

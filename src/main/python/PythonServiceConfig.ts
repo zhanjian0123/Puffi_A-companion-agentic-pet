@@ -1,6 +1,5 @@
 export interface PythonServiceConfig {
   baseUrl: string;
-  entry: string;
   host: string;
   port: number;
 }
@@ -11,7 +10,6 @@ export function getPythonServiceConfig(): PythonServiceConfig {
 
   return {
     baseUrl: `http://${host}:${port}`,
-    entry: 'python/main.py',
     host,
     port,
   };

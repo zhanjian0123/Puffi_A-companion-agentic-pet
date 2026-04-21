@@ -39,8 +39,8 @@ export function createPetWindow(): BrowserWindow {
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload.js'),
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
       webSecurity: true,
     },
   });
@@ -75,8 +75,8 @@ export function createPanelWindow(): BrowserWindow {
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload.js'),
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
       webSecurity: true,
     },
   });

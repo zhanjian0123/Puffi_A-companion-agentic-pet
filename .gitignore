@@ -22,13 +22,15 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.venv/
+
+# Python
+__pycache__/
+*.pyc
 
 # Logs
 *.log
 npm-debug.log*
-
-# Knowledge base (optional - commit if you want to sync)
-knowledge/
 
 # MCP server state
 .mcp-state/

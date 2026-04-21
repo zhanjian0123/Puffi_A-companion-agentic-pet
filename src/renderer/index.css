@@ -70,6 +70,12 @@ body {
   touch-action: none;
 }
 
+.pet:hover,
+.pet:focus-visible {
+  background: transparent;
+  outline: none;
+}
+
 @keyframes bounce {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
@@ -125,24 +131,11 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: none;
 }
 
 .panel-window {
   padding: 10px 14px 14px;
-}
-
-.debug-chip {
-  align-self: center;
-  margin-bottom: 10px;
-  max-width: calc(100vw - 16px);
-  padding: 6px 8px;
-  border-radius: 10px;
-  background: rgba(19, 28, 43, 0.78);
-  color: #f7fbff;
-  font-size: 11px;
-  line-height: 1.2;
-  text-align: center;
-  pointer-events: none;
 }
 
 .chat-header {
