@@ -13,6 +13,12 @@ class ChatResponse(BaseModel):
     action: Any | None = None
 
 
+class ChatStreamEvent(BaseModel):
+    type: Literal["delta", "done", "error"]
+    delta: str | None = None
+    message: str | None = None
+
+
 class HistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str

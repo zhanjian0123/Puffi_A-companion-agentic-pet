@@ -1,9 +1,12 @@
-import type { KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { PANEL_VISIBLE_MESSAGE_COUNT } from '../../shared/chatConfig';
+import { MarkdownMessage } from './MarkdownMessage';
 
 export interface ChatMessage {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
+  streaming?: boolean;
 }
 
 export interface ChatPanelProps {
@@ -17,6 +20,16 @@ export interface ChatPanelProps {
 
 export function ChatPanel({ input, isLoading, messages, onChange, onClose, onSend }: ChatPanelProps) {
   const visibleMessages = messages.slice(-PANEL_VISIBLE_MESSAGE_COUNT);
+  const messageViewportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const viewport = messageViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [visibleMessages, isLoading]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -33,13 +46,21 @@ export function ChatPanel({ input, isLoading, messages, onChange, onClose, onSen
           ×
         </button>
       </div>
-      <div className="messages">
+      <div className="messages" ref={messageViewportRef}>
         {visibleMessages.map((message, index) => (
-          <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
-            {message.content}
+          <div key={message.id} className={`message ${message.role}`}>
+            {isLoading &&
+            message.role === 'assistant' &&
+            !message.content &&
+            index === visibleMessages.length - 1 ? (
+              <div className="message-status typing">...</div>
+            ) : message.streaming ? (
+              <div className="streaming-message">{message.content}</div>
+            ) : (
+              <MarkdownMessage content={message.content} />
+            )}
           </div>
         ))}
-        {isLoading ? <div className="message assistant typing">...</div> : null}
       </div>
 
       <div className="input-area">

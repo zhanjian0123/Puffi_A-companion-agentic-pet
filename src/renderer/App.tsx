@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getElectronApi, requireElectronApi } from './electronApi';
 import { ChatPanel, type ChatMessage } from './chat/ChatPanel';
 import { PetAvatar } from './pet/PetAvatar';
@@ -13,6 +13,9 @@ export default function App() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [emotion, setEmotion] = useState<PetEmotion>('neutral');
+  const activeStreamRef = useRef<{ assistantMessageId: string; requestId: string } | null>(null);
+  const pendingDeltaRef = useRef('');
+  const flushTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (ENABLE_DESKTOP_DEBUG_LOGS) {
@@ -22,6 +25,60 @@ export default function App() {
       });
     }
   }, [mode]);
+
+  useEffect(() => {
+    const unsubscribe = requireElectronApi().onChatStreamEvent((event) => {
+      const activeStream = activeStreamRef.current;
+      if (!activeStream || event.requestId !== activeStream.requestId) {
+        return;
+      }
+
+      if (event.type === 'delta') {
+        pendingDeltaRef.current += event.delta ?? '';
+        scheduleStreamFlush();
+        return;
+      }
+
+      if (event.type === 'error') {
+        flushPendingDelta();
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === activeStream.assistantMessageId
+              ? {
+                  ...message,
+                  content: event.message || '发送消息失败，请稍后再试。',
+                  streaming: false,
+                }
+              : message
+          )
+        );
+        activeStreamRef.current = null;
+        setIsLoading(false);
+        setEmotion('sad');
+        return;
+      }
+
+      flushPendingDelta();
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === activeStream.assistantMessageId
+            ? {
+                ...message,
+                streaming: false,
+              }
+            : message
+        )
+      );
+      activeStreamRef.current = null;
+      setIsLoading(false);
+      setEmotion('happy');
+    });
+
+    return () => {
+      clearFlushTimer();
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (mode !== 'panel') {
@@ -34,7 +91,13 @@ export default function App() {
       try {
         const response = await requireElectronApi().history(PANEL_VISIBLE_MESSAGE_COUNT);
         if (!isCancelled) {
-          setMessages(response.messages);
+          setMessages(
+            response.messages.map((message) => ({
+              id: createMessageId(),
+              streaming: false,
+              ...message,
+            }))
+          );
         }
       } catch (error) {
         console.error('Load history error:', error);
@@ -62,31 +125,43 @@ export default function App() {
       return;
     }
 
-    const userMessage: ChatMessage = { role: 'user', content: message };
-    setMessages((prev) => [...prev, userMessage]);
+    const userMessage: ChatMessage = { id: createMessageId(), role: 'user', content: message };
+    const assistantMessage: ChatMessage = {
+      id: createMessageId(),
+      role: 'assistant',
+      content: '',
+      streaming: true,
+    };
+    const requestId = createMessageId();
+
+    activeStreamRef.current = {
+      requestId,
+      assistantMessageId: assistantMessage.id,
+    };
+
+    setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setInput('');
     setIsLoading(true);
 
     try {
-      const response = await requireElectronApi().chat(message);
-
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: response?.response || '...',
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setEmotion('happy');
+      await requireElectronApi().startChatStream({ message, requestId });
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: error instanceof Error ? error.message : '发送消息失败，请稍后再试。',
-        },
-      ]);
+      setMessages((prev) =>
+        prev.map((existingMessage) =>
+          existingMessage.id === assistantMessage.id
+            ? {
+                ...existingMessage,
+                content: error instanceof Error ? error.message : '发送消息失败，请稍后再试。',
+                streaming: false,
+              }
+            : existingMessage
+        )
+      );
+      clearFlushTimer();
+      pendingDeltaRef.current = '';
+      activeStreamRef.current = null;
       setEmotion('sad');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -117,4 +192,45 @@ export default function App() {
       </div>
     </div>
   );
+
+  function scheduleStreamFlush() {
+    if (flushTimerRef.current !== null) {
+      return;
+    }
+
+    flushTimerRef.current = window.setTimeout(() => {
+      flushTimerRef.current = null;
+      flushPendingDelta();
+    }, 40);
+  }
+
+  function clearFlushTimer() {
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+  }
+
+  function flushPendingDelta() {
+    const activeStream = activeStreamRef.current;
+    const delta = pendingDeltaRef.current;
+
+    if (!activeStream || !delta) {
+      pendingDeltaRef.current = '';
+      return;
+    }
+
+    pendingDeltaRef.current = '';
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === activeStream.assistantMessageId
+          ? { ...message, content: `${message.content}${delta}` }
+          : message
+      )
+    );
+  }
+}
+
+function createMessageId(): string {
+  return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }

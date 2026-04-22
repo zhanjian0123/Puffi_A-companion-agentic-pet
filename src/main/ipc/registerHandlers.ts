@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BrowserWindow, ipcMain } from 'electron';
 import type { PythonAgentClient } from '../python/PythonAgentClient';
 import { ENABLE_DESKTOP_DEBUG_LOGS } from '../../shared/devFlags';
@@ -17,6 +18,11 @@ interface DragSession {
   startY: number;
 }
 
+interface StreamPayload {
+  message: string;
+  requestId?: string;
+}
+
 export function registerIpcHandlers(agentClient: PythonAgentClient, windows: WindowController): void {
   const dragSessions = new Map<number, DragSession>();
 
@@ -32,6 +38,36 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
 
   ipcMain.handle('chat:history', async (_event, limit?: number) => {
     return agentClient.history(limit);
+  });
+
+  ipcMain.handle('chat:stream-start', async (event, payload: StreamPayload) => {
+    const requestId = payload.requestId || randomUUID();
+    const sender = event.sender;
+
+    void (async () => {
+      try {
+        for await (const chunk of agentClient.chatStream(payload.message)) {
+          if (sender.isDestroyed()) {
+            return;
+          }
+
+          sender.send('chat:stream-event', {
+            requestId,
+            ...chunk,
+          });
+        }
+      } catch (error) {
+        if (!sender.isDestroyed()) {
+          sender.send('chat:stream-event', {
+            requestId,
+            type: 'error',
+            message: error instanceof Error ? error.message : '流式响应失败，请稍后再试。',
+          });
+        }
+      }
+    })();
+
+    return { requestId };
   });
 
   ipcMain.handle('window:set-panel-open', async (_event, isOpen: boolean) => {

@@ -22,6 +22,12 @@ export interface HistoryResult {
   messages: HistoryMessage[];
 }
 
+export interface ChatStreamChunk {
+  type: 'delta' | 'done' | 'error';
+  delta?: string;
+  message?: string;
+}
+
 export class PythonAgentClient {
   constructor(private readonly options: PythonAgentClientOptions) {}
 
@@ -40,6 +46,65 @@ export class PythonAgentClient {
   async history(limit?: number): Promise<HistoryResult> {
     const search = typeof limit === 'number' ? `?limit=${encodeURIComponent(limit)}` : '';
     return this.requestJson<HistoryResult>(`/history${search}`);
+  }
+
+  async *chatStream(message: string): AsyncGenerator<ChatStreamChunk> {
+    let response: Response;
+
+    try {
+      response = await fetch(`${this.options.baseUrl}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'fetch failed') {
+        throw new Error(
+          `Python agent service is not reachable at ${this.options.baseUrl}. ` +
+            'Please start the Python backend with `npm run dev:python`.'
+        );
+      }
+
+      throw error;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Python agent request failed: ${response.status} ${response.statusText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('Python agent stream returned an empty response body.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+
+        yield JSON.parse(trimmed) as ChatStreamChunk;
+      }
+    }
+
+    buffer += decoder.decode();
+    const trailingLine = buffer.trim();
+    if (trailingLine) {
+      yield JSON.parse(trailingLine) as ChatStreamChunk;
+    }
   }
 
   private async readJson<T>(response: Response): Promise<T> {

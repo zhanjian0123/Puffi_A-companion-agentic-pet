@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { ChatStreamEvent } from '../shared/types';
 
 try {
   ipcRenderer.send('bridge:ready');
@@ -6,6 +7,19 @@ try {
   contextBridge.exposeInMainWorld('electronAPI', {
     chat: (message: string) => ipcRenderer.invoke('chat:message', message),
     history: (limit?: number) => ipcRenderer.invoke('chat:history', limit),
+    startChatStream: (payload: { message: string; requestId: string }) =>
+      ipcRenderer.invoke('chat:stream-start', payload),
+    onChatStreamEvent: (callback: (event: ChatStreamEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: ChatStreamEvent) => {
+        callback(payload);
+      };
+
+      ipcRenderer.on('chat:stream-event', listener);
+
+      return () => {
+        ipcRenderer.removeListener('chat:stream-event', listener);
+      };
+    },
     setPanelOpen: (isOpen: boolean) => ipcRenderer.invoke('window:set-panel-open', isOpen),
     togglePanel: () => ipcRenderer.invoke('window:toggle-panel'),
     startWindowDrag: (x: number, y: number) => ipcRenderer.invoke('window:drag-start', { x, y }),
