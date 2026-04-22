@@ -1,6 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 
-from schemas import ChatRequest, ChatResponse, HealthResponse
+from schemas import ChatRequest, ChatResponse, HealthResponse, HistoryResponse
 from service import AgentService
 
 agent_service = AgentService()
@@ -15,3 +15,8 @@ async def health() -> HealthResponse:
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     return await agent_service.chat(request)
+
+
+@app.get("/history", response_model=HistoryResponse)
+async def history(limit: int = Query(default=10, ge=1, le=50)) -> HistoryResponse:
+    return await agent_service.history(limit)

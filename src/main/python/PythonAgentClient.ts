@@ -13,6 +13,15 @@ export interface ChatResult {
   action?: unknown;
 }
 
+export interface HistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface HistoryResult {
+  messages: HistoryMessage[];
+}
+
 export class PythonAgentClient {
   constructor(private readonly options: PythonAgentClientOptions) {}
 
@@ -26,6 +35,11 @@ export class PythonAgentClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
     });
+  }
+
+  async history(limit?: number): Promise<HistoryResult> {
+    const search = typeof limit === 'number' ? `?limit=${encodeURIComponent(limit)}` : '';
+    return this.requestJson<HistoryResult>(`/history${search}`);
   }
 
   private async readJson<T>(response: Response): Promise<T> {

@@ -3,6 +3,7 @@ import { getElectronApi, requireElectronApi } from './electronApi';
 import { ChatPanel, type ChatMessage } from './chat/ChatPanel';
 import { PetAvatar } from './pet/PetAvatar';
 import { ENABLE_DESKTOP_DEBUG_LOGS } from '../shared/devFlags';
+import { PANEL_VISIBLE_MESSAGE_COUNT } from '../shared/chatConfig';
 
 type PetEmotion = 'happy' | 'neutral' | 'sad';
 
@@ -20,6 +21,31 @@ export default function App() {
         hasElectronApi: !!getElectronApi(),
       });
     }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'panel') {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadHistory = async () => {
+      try {
+        const response = await requireElectronApi().history(PANEL_VISIBLE_MESSAGE_COUNT);
+        if (!isCancelled) {
+          setMessages(response.messages);
+        }
+      } catch (error) {
+        console.error('Load history error:', error);
+      }
+    };
+
+    void loadHistory();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [mode]);
 
   const setPanelOpen = async (nextOpen: boolean) => {

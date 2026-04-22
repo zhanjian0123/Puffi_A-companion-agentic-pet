@@ -1,3 +1,4 @@
+from typing import Literal
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -10,6 +11,15 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     action: Any | None = None
+
+
+class HistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class HistoryResponse(BaseModel):
+    messages: list[HistoryMessage]
 
 
 class HealthResponse(BaseModel):

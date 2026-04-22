@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react';
+import { PANEL_VISIBLE_MESSAGE_COUNT } from '../../shared/chatConfig';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -15,6 +16,8 @@ export interface ChatPanelProps {
 }
 
 export function ChatPanel({ input, isLoading, messages, onChange, onClose, onSend }: ChatPanelProps) {
+  const visibleMessages = messages.slice(-PANEL_VISIBLE_MESSAGE_COUNT);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -31,7 +34,7 @@ export function ChatPanel({ input, isLoading, messages, onChange, onClose, onSen
         </button>
       </div>
       <div className="messages">
-        {messages.map((message, index) => (
+        {visibleMessages.map((message, index) => (
           <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
             {message.content}
           </div>

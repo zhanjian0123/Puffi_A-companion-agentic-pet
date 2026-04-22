@@ -30,6 +30,10 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     return agentClient.chat(message);
   });
 
+  ipcMain.handle('chat:history', async (_event, limit?: number) => {
+    return agentClient.history(limit);
+  });
+
   ipcMain.handle('window:set-panel-open', async (_event, isOpen: boolean) => {
     if (isOpen) {
       windows.openPanel();

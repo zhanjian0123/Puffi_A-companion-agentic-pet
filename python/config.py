@@ -22,14 +22,34 @@ def _load_env_files() -> None:
 _load_env_files()
 
 
+def _optional_env(name: str) -> str | None:
+    value = os.getenv(name)
+    return value or None
+
+
+def _optional_int_env(name: str) -> int | None:
+    value = _optional_env(name)
+    if value is None:
+        return None
+
+    return int(value)
+
+
+def _default_session_db_path() -> str:
+    return str(Path.home() / ".ai-pet" / "agent_sessions.sqlite3")
+
+
 @dataclass(slots=True)
 class Settings:
     host: str = os.getenv("AI_PET_AGENT_HOST", "127.0.0.1")
     port: int = int(os.getenv("AI_PET_AGENT_PORT", "8787"))
-    openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
-    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5.4")
-    openai_base_url: str | None = os.getenv("OPENAI_BASE_URL")
-    openai_websocket_base_url: str | None = os.getenv("OPENAI_WEBSOCKET_BASE_URL")
+    openai_api_key: str | None = _optional_env("OPENAI_API_KEY")
+    openai_model: str = os.getenv("OPENAI_MODEL", "qwen3.6-plus")
+    openai_base_url: str | None = _optional_env("OPENAI_BASE_URL")
+    openai_websocket_base_url: str | None = _optional_env("OPENAI_WEBSOCKET_BASE_URL")
+    session_id: str = os.getenv("AI_PET_SESSION_ID", "desktop-active")
+    session_db_path: str = os.getenv("AI_PET_SESSION_DB_PATH", _default_session_db_path())
+    session_context_limit: int | None = _optional_int_env("AI_PET_SESSION_CONTEXT_LIMIT")
 
 
 settings = Settings()
