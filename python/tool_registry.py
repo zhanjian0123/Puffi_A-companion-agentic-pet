@@ -11,6 +11,7 @@ from tools.layer1.get_current_time import get_current_time
 from tools.layer1.list_todos import list_todos
 from tools.layer2.add_todo import add_todo
 from tools.layer2.complete_todo import complete_todo
+from tools.layer2.create_or_update_skill import create_or_update_skill
 from tools.layer2.remove_todo import remove_todo
 
 
@@ -24,6 +25,7 @@ CONTROLLED_WRITE_TOOLS: list[Tool] = [
     add_todo,
     complete_todo,
     remove_todo,
+    create_or_update_skill,
 ]
 
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
+    mode: str = Field(default="chat", min_length=1, max_length=40)
 
 
 class ChatResponse(BaseModel):

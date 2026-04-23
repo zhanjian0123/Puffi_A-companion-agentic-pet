@@ -20,7 +20,13 @@ interface DragSession {
 
 interface StreamPayload {
   message: string;
+  mode?: string;
   requestId?: string;
+}
+
+interface ChatPayload {
+  message: string;
+  mode?: string;
 }
 
 export function registerIpcHandlers(agentClient: PythonAgentClient, windows: WindowController): void {
@@ -32,8 +38,8 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     }
   });
 
-  ipcMain.handle('chat:message', async (_event, message: string) => {
-    return agentClient.chat(message);
+  ipcMain.handle('chat:message', async (_event, payload: ChatPayload) => {
+    return agentClient.chat(payload);
   });
 
   ipcMain.handle('chat:history', async (_event, limit?: number) => {
@@ -46,7 +52,10 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
 
     void (async () => {
       try {
-        for await (const chunk of agentClient.chatStream(payload.message)) {
+        for await (const chunk of agentClient.chatStream({
+          message: payload.message,
+          mode: payload.mode,
+        })) {
           if (sender.isDestroyed()) {
             return;
           }

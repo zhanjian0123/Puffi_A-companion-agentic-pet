@@ -1,13 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ChatStreamEvent } from '../shared/types';
+import type { ChatRequestPayload, ChatStreamEvent } from '../shared/types';
 
 try {
   ipcRenderer.send('bridge:ready');
 
   contextBridge.exposeInMainWorld('electronAPI', {
-    chat: (message: string) => ipcRenderer.invoke('chat:message', message),
+    chat: (payload: ChatRequestPayload) => ipcRenderer.invoke('chat:message', payload),
     history: (limit?: number) => ipcRenderer.invoke('chat:history', limit),
-    startChatStream: (payload: { message: string; requestId: string }) =>
+    startChatStream: (payload: ChatRequestPayload & { requestId: string }) =>
       ipcRenderer.invoke('chat:stream-start', payload),
     onChatStreamEvent: (callback: (event: ChatStreamEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: ChatStreamEvent) => {

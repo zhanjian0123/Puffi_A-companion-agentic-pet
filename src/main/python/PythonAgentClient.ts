@@ -13,6 +13,11 @@ export interface ChatResult {
   action?: unknown;
 }
 
+export interface ChatPayload {
+  message: string;
+  mode?: string;
+}
+
 export interface HistoryMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -35,11 +40,11 @@ export class PythonAgentClient {
     return this.requestJson<HealthResult>('/health');
   }
 
-  async chat(message: string): Promise<ChatResult> {
+  async chat(payload: ChatPayload): Promise<ChatResult> {
     return this.requestJson<ChatResult>('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -48,14 +53,14 @@ export class PythonAgentClient {
     return this.requestJson<HistoryResult>(`/history${search}`);
   }
 
-  async *chatStream(message: string): AsyncGenerator<ChatStreamChunk> {
+  async *chatStream(payload: ChatPayload): AsyncGenerator<ChatStreamChunk> {
     let response: Response;
 
     try {
       response = await fetch(`${this.options.baseUrl}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(payload),
       });
     } catch (error) {
       if (error instanceof Error && error.message === 'fetch failed') {

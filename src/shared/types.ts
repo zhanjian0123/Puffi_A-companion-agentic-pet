@@ -10,10 +10,15 @@ export interface ChatStreamEvent {
   message?: string;
 }
 
+export interface ChatRequestPayload {
+  message: string;
+  mode?: string;
+}
+
 export interface ElectronAPI {
-  chat: (message: string) => Promise<{ response: string; action?: unknown }>;
+  chat: (payload: ChatRequestPayload) => Promise<{ response: string; action?: unknown }>;
   history: (limit?: number) => Promise<{ messages: ChatHistoryMessage[] }>;
-  startChatStream: (payload: { message: string; requestId: string }) => Promise<{ requestId: string }>;
+  startChatStream: (payload: ChatRequestPayload & { requestId: string }) => Promise<{ requestId: string }>;
   onChatStreamEvent: (callback: (event: ChatStreamEvent) => void) => () => void;
   setPanelOpen: (isOpen: boolean) => Promise<{ success: boolean }>;
   togglePanel: () => Promise<{ success: boolean; isOpen: boolean }>;

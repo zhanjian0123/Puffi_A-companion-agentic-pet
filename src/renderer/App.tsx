@@ -6,6 +6,7 @@ import { ENABLE_DESKTOP_DEBUG_LOGS } from '../shared/devFlags';
 import { PANEL_VISIBLE_MESSAGE_COUNT } from '../shared/chatConfig';
 
 type PetEmotion = 'happy' | 'neutral' | 'sad';
+const DEFAULT_AGENT_MODE = 'chat';
 
 export default function App() {
   const mode = new URLSearchParams(window.location.search).get('mode') === 'panel' ? 'panel' : 'pet';
@@ -144,7 +145,11 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      await requireElectronApi().startChatStream({ message, requestId });
+      await requireElectronApi().startChatStream({
+        message,
+        mode: DEFAULT_AGENT_MODE,
+        requestId,
+      });
     } catch (error) {
       console.error('Chat error:', error);
       setMessages((prev) =>
