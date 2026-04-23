@@ -6,6 +6,7 @@ import json
 from config import settings
 from schemas import ChatRequest, ChatResponse, ChatStreamEvent, HealthResponse, HistoryResponse
 from session_store import AgentSessionStore
+from tool_registry import build_agent_tools
 
 try:
     from agents import Agent, Runner, set_default_openai_client
@@ -20,7 +21,18 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 SYSTEM_PROMPT = """你是 AI Pet 的桌面宠物助手。
-保持回复简洁、自然、友好，优先直接帮用户完成事情，对话可以适当添加一些emoji。"""
+保持回复简洁、自然、友好，优先直接帮用户完成事情，对话可以适当添加一些 emoji。
+
+工具使用规则：
+1. 遇到时间、日期、待办查询这类需要准确信息的问题，优先调用可用工具，不要凭空猜测。
+2. 普通陪聊、安慰、解释类问题，如果不需要工具就直接自然回答，不要为了用工具而用工具。
+3. 如果工具执行失败、找不到目标或返回空结果，要明确告诉用户真实情况，绝对不要编造工具结果。
+
+写入边界规则：
+1. 你只能通过待办相关工具修改受控的本地待办数据。
+2. 你不能假装自己能写任意文件，也不能承诺修改待办工具以外的本地内容。
+3. 当用户想新增、完成或删除待办时，优先使用对应工具完成操作。
+"""
 
 
 class AgentService:
@@ -167,6 +179,7 @@ class AgentService:
             name="AI Pet Assistant",
             instructions=SYSTEM_PROMPT,
             model=settings.openai_model,
+            tools=build_agent_tools(),
         )
 
     def _stringify_output(self, output: object) -> str:

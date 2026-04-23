@@ -39,6 +39,10 @@ def _default_session_db_path() -> str:
     return str(Path.home() / ".ai-pet" / "agent_sessions.sqlite3")
 
 
+def _default_tool_data_dir() -> str:
+    return str((Path(__file__).resolve().parent / "data" / "tools").resolve())
+
+
 @dataclass(slots=True)
 class Settings:
     host: str = os.getenv("AI_PET_AGENT_HOST", "127.0.0.1")
@@ -50,6 +54,7 @@ class Settings:
     session_id: str = os.getenv("AI_PET_SESSION_ID", "desktop-active")
     session_db_path: str = os.getenv("AI_PET_SESSION_DB_PATH", _default_session_db_path())
     session_context_limit: int | None = _optional_int_env("AI_PET_SESSION_CONTEXT_LIMIT")
+    tool_data_dir: str = os.getenv("AI_PET_TOOL_DATA_DIR", _default_tool_data_dir())
 
 
 settings = Settings()
