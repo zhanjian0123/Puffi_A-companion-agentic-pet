@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from inspect import isawaitable
+from time import perf_counter
+from typing import Any
+
 from agents import Tool
 
 from tools.layer1.get_current_date import get_current_date
@@ -23,8 +27,52 @@ CONTROLLED_WRITE_TOOLS: list[Tool] = [
 ]
 
 
+def _shorten(value: object, limit: int = 500) -> str:
+    text = str(value)
+    if len(text) <= limit:
+        return text
+
+    return f"{text[:limit]}...<truncated>"
+
+
+def _with_tool_logs(tool: Tool) -> Tool:
+    if getattr(tool, "_ai_pet_tool_logging_wrapped", False):
+        return tool
+
+    original_invoke = tool.on_invoke_tool
+    tool_name = getattr(tool, "name", type(tool).__name__)
+
+    async def logged_invoke(ctx: Any, input: str) -> Any:
+        started_at = perf_counter()
+        print(f"[Tool] start {tool_name} args={_shorten(input)}", flush=True)
+
+        try:
+            result = original_invoke(ctx, input)
+            if isawaitable(result):
+                result = await result
+        except Exception as error:
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            print(
+                f"[Tool] error {tool_name} elapsed={elapsed_ms:.1f}ms error={_shorten(error)}",
+                flush=True,
+            )
+            raise
+
+        elapsed_ms = (perf_counter() - started_at) * 1000
+        print(
+            f"[Tool] success {tool_name} elapsed={elapsed_ms:.1f}ms result={_shorten(result)}",
+            flush=True,
+        )
+        return result
+
+    tool.on_invoke_tool = logged_invoke
+    setattr(tool, "_ai_pet_tool_logging_wrapped", True)
+    return tool
+
+
 def build_agent_tools() -> list[Tool]:
-    return [
+    tools = [
         *SAFE_READ_ONLY_TOOLS,
         *CONTROLLED_WRITE_TOOLS,
     ]
+    return [_with_tool_logs(tool) for tool in tools]
