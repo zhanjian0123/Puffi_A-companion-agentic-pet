@@ -317,7 +317,9 @@ class MarkdownMemoryStore:
         return "\n".join(lines).rstrip() + "\n"
 
     def _upsert_stable_summary(self, document: MarkdownDocument, candidate: MemoryCandidate) -> str:
-        section_lines = [line for line in document.sections.get(candidate.section, []) if line.strip()]
+        section_lines = self._normalize_section_lines(
+            [line for line in document.sections.get(candidate.section, []) if line.strip()]
+        )
         exact_bullet = f"- {candidate.summary}"
         label_prefix = f"- {candidate.label}："
 
@@ -328,6 +330,11 @@ class MarkdownMemoryStore:
 
         if self._is_mergeable_preference(candidate):
             return self._merge_preference_summary(document, candidate, section_lines, label_prefix)
+
+        if self._should_append_for_same_label(candidate):
+            section_lines.append(exact_bullet)
+            document.sections[candidate.section] = self._dedupe_lines(section_lines)
+            return "created"
 
         replaced = False
         updated_lines: list[str] = []
@@ -345,7 +352,10 @@ class MarkdownMemoryStore:
         return "updated" if replaced else "created"
 
     def _is_mergeable_preference(self, candidate: MemoryCandidate) -> bool:
-        return candidate.label in {"音乐偏好", "美食偏好", "游戏偏好"}
+        return candidate.kind == "preference" and bool(candidate.items)
+
+    def _should_append_for_same_label(self, candidate: MemoryCandidate) -> bool:
+        return candidate.label in {"长期偏好", "使用习惯", "长期目标", "个人信息"}
 
     def _merge_preference_summary(
         self,
@@ -354,7 +364,7 @@ class MarkdownMemoryStore:
         section_lines: list[str],
         label_prefix: str,
     ) -> str:
-        candidate_items = self._extract_preference_items(candidate.summary)
+        candidate_items = list(candidate.items) or self._extract_preference_items(candidate.summary)
         if not candidate_items:
             return "ignored"
 
@@ -384,11 +394,52 @@ class MarkdownMemoryStore:
             updated_lines.append(f"- {self._format_preference_summary(candidate.label, candidate_items)}")
             changed = True
 
-        document.sections[candidate.section] = updated_lines
+        document.sections[candidate.section] = self._dedupe_lines(updated_lines)
         if not changed:
             return "ignored"
 
         return "updated" if merged else "created"
+
+    def _normalize_section_lines(self, section_lines: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for line in section_lines:
+            converted = self._normalize_existing_line(line)
+            normalized.append(converted or line)
+
+        return self._dedupe_lines(normalized)
+
+    def _normalize_existing_line(self, line: str) -> str | None:
+        if line.startswith("- 编码协作偏好："):
+            return "- 编码协作偏好：使用 Codex 写代码时，偏好先给方案，再进行编码。"
+
+        if not line.startswith("- 长期偏好："):
+            return None
+
+        content = line.removeprefix("- 长期偏好：").strip()
+        content = re.sub(
+            r"^(喜欢)?(在)?(当前模式|这个模式|本模式|核心记忆|长期记忆)下?[，,\s]*",
+            "",
+            content,
+        ).strip()
+        content = re.sub(r"^记住我", "", content).strip()
+        content = content.strip("。")
+
+        if not content:
+            return None
+
+        if content.startswith("喜欢吃"):
+            return f"- 美食偏好：{content}。"
+
+        if content.startswith("喜欢听"):
+            return f"- 音乐偏好：喜欢{content.removeprefix('喜欢听')}。"
+
+        if content.startswith("喜欢玩"):
+            return f"- 游戏偏好：{content}。"
+
+        if "codex" in content.lower() and any(token in content for token in ("方案", "编码", "写代码", "代码")):
+            return "- 编码协作偏好：使用 Codex 写代码时，偏好先给方案，再进行编码。"
+
+        return None
 
     def _extract_preference_items(self, summary: str) -> list[str]:
         if "：" not in summary:
@@ -422,6 +473,14 @@ class MarkdownMemoryStore:
             marker in line
             for marker in ("我还喜欢", "我喜欢", "喜欢听", "喜欢吃", "喜欢玩")
         )
+
+    def _dedupe_lines(self, lines: list[str]) -> list[str]:
+        deduped: list[str] = []
+        for line in lines:
+            if line not in deduped:
+                deduped.append(line)
+
+        return deduped
 
     def _remove_matching_lines(self, path: Path, query: str) -> bool:
         if not path.exists():

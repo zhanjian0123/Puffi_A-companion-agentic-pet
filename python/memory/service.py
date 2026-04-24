@@ -210,96 +210,30 @@ class MemoryService:
         mode: str,
         explicit: bool,
     ) -> MemoryCandidate | None:
-        raw_input = self._clean_remember_content(message) if explicit else message.strip()
+        raw_input = self._clean_memory_content(message, explicit=explicit)
         normalized = re.sub(r"\s+", "", raw_input)
         if not normalized:
             return None
 
         scope = self._detect_scope(message)
-
-        music = self._extract_music_name(normalized)
-        if music:
-            return MemoryCandidate(
-                scope=scope,
-                mode=mode,
-                section="Stable Preferences" if scope == "core" else "Preferences",
-                label="音乐偏好",
-                summary=f"音乐偏好：喜欢{music}。",
-                raw_input=raw_input,
-            )
-
-        food = self._extract_food_name(normalized)
-        if food:
-            return MemoryCandidate(
-                scope=scope,
-                mode=mode,
-                section="Stable Preferences" if scope == "core" else "Preferences",
-                label="美食偏好",
-                summary=f"美食偏好：喜欢吃{food}。",
-                raw_input=raw_input,
-            )
-
-        game = self._extract_game_name(normalized)
-        if game:
-            return MemoryCandidate(
-                scope=scope,
-                mode=mode,
-                section="Stable Preferences" if scope == "core" else "Preferences",
-                label="游戏偏好",
-                summary=f"游戏偏好：喜欢玩{game}。",
-                raw_input=raw_input,
-            )
-
-        if "codex" in normalized.lower() and any(token in normalized for token in ("方案", "编码", "写代码", "代码")):
-            return MemoryCandidate(
-                scope=scope,
-                mode=mode,
-                section="Stable Preferences" if scope == "core" else "Preferences",
-                label="编码协作偏好",
-                summary="编码协作偏好：使用 Codex 写代码时，偏好先给方案，再进行编码。",
-                raw_input=raw_input,
-            )
-
-        if any(token in normalized for token in ("喜欢", "偏好", "希望", "不喜欢")):
-            detail = self._extract_preference_detail(raw_input)
-            if detail:
-                return MemoryCandidate(
-                    scope=scope,
-                    mode=mode,
-                    section="Stable Preferences" if scope == "core" else "Preferences",
-                    label="长期偏好",
-                    summary=f"长期偏好：{detail}",
-                    raw_input=raw_input,
-                )
-
-        if any(token in normalized for token in ("习惯", "平常", "通常", "一般")):
-            detail = self._extract_habit_detail(raw_input)
-            if detail:
-                return MemoryCandidate(
-                    scope=scope,
-                    mode=mode,
-                    section="Habits" if scope == "core" else "Current State",
-                    label="使用习惯",
-                    summary=f"使用习惯：{detail}",
-                    raw_input=raw_input,
-                )
-
-        if any(token in normalized for token in ("规则", "必须", "先", "不要", "不能")):
-            detail = self._extract_rule_detail(raw_input)
-            if detail:
-                return MemoryCandidate(
-                    scope=scope,
-                    mode=mode,
-                    section="Collaboration Rules" if scope == "core" else "Preferences",
-                    label="协作规则",
-                    summary=f"协作规则：{detail}",
-                    raw_input=raw_input,
-                )
+        kind = self._detect_kind(normalized)
+        candidate = self._build_candidate(
+            scope=scope,
+            mode=mode,
+            kind=kind,
+            raw_input=raw_input,
+            normalized=normalized,
+            explicit=explicit,
+        )
+        if candidate is not None:
+            return candidate
 
         if explicit:
             return MemoryCandidate(
                 scope=scope,
                 mode=mode,
+                kind="preference",
+                category="general",
                 section="Stable Preferences" if scope == "core" else "Preferences",
                 label="长期偏好",
                 summary=f"长期偏好：{self._normalize_sentence(raw_input)}",
@@ -308,7 +242,254 @@ class MemoryService:
 
         return None
 
+    def _build_candidate(
+        self,
+        *,
+        scope: str,
+        mode: str,
+        kind: str,
+        raw_input: str,
+        normalized: str,
+        explicit: bool,
+    ) -> MemoryCandidate | None:
+        category = self._infer_category(kind=kind, raw_input=raw_input, normalized=normalized)
+        section = self._section_for(kind=kind, scope=scope)
+        label = self._label_for(kind=kind, category=category)
+
+        if kind == "preference":
+            items = self._extract_preference_items(raw_input=raw_input, normalized=normalized, category=category)
+            summary = self._build_preference_summary(
+                raw_input=raw_input,
+                normalized=normalized,
+                category=category,
+                label=label,
+                items=items,
+            )
+            if not summary:
+                return None
+
+            return MemoryCandidate(
+                scope=scope,
+                mode=mode,
+                kind=kind,
+                category=category,
+                section=section,
+                label=label,
+                summary=summary,
+                raw_input=raw_input,
+                items=tuple(items),
+            )
+
+        if kind == "habit":
+            detail = self._extract_habit_detail(raw_input)
+            if not detail:
+                return None
+            return MemoryCandidate(
+                scope=scope,
+                mode=mode,
+                kind=kind,
+                category=category,
+                section=section,
+                label=label,
+                summary=f"{label}：{detail}",
+                raw_input=raw_input,
+            )
+
+        if kind == "goal":
+            detail = self._extract_goal_detail(raw_input)
+            if not detail:
+                return None
+            return MemoryCandidate(
+                scope=scope,
+                mode=mode,
+                kind=kind,
+                category=category,
+                section=section,
+                label=label,
+                summary=f"{label}：{detail}",
+                raw_input=raw_input,
+            )
+
+        if kind == "profile":
+            detail = self._extract_profile_detail(raw_input)
+            if not detail:
+                return None
+            return MemoryCandidate(
+                scope=scope,
+                mode=mode,
+                kind=kind,
+                category=category,
+                section=section,
+                label=label,
+                summary=f"{label}：{detail}",
+                raw_input=raw_input,
+            )
+
+        detail = self._extract_rule_detail(raw_input)
+        if not detail:
+            return None
+        return MemoryCandidate(
+            scope=scope,
+            mode=mode,
+            kind="rule",
+            category=category,
+            section=section,
+            label=label,
+            summary=f"{label}：{detail}",
+            raw_input=raw_input,
+        )
+
+    def _detect_kind(self, normalized: str) -> str:
+        if any(token in normalized for token in ("喜欢", "爱", "偏好", "不喜欢", "讨厌", "想吃", "想听", "想玩")):
+            return "preference"
+
+        if any(token in normalized for token in ("目标", "计划", "准备", "想要", "希望做到", "打算")):
+            return "goal"
+
+        if any(token in normalized for token in ("我是", "来自", "职业", "工作是", "身份")):
+            return "profile"
+
+        if any(token in normalized for token in ("习惯", "平常", "通常", "一般", "经常")):
+            return "habit"
+
+        return "rule"
+
+    def _infer_category(self, *, kind: str, raw_input: str, normalized: str) -> str:
+        lowered = normalized.lower()
+
+        if "codex" in lowered or any(token in normalized for token in ("写代码", "编码", "代码", "开发")):
+            if any(token in normalized for token in ("方案", "先", "再")):
+                return "coding_workflow"
+            if kind == "habit":
+                return "coding_workflow"
+
+        if self._extract_food_name(normalized):
+            return "food"
+
+        if self._extract_music_name(normalized):
+            return "music"
+
+        if self._extract_game_name(normalized):
+            return "game"
+
+        if any(token in normalized for token in ("回答", "解释", "语气", "简洁", "详细", "直接", "精简")):
+            return "communication_style"
+
+        if any(token in normalized for token in ("学习", "背单词", "复习", "刷题", "考试")):
+            return "learning"
+
+        if any(token in normalized for token in ("上班", "工作", "效率", "专注", "提醒")):
+            return "work_style"
+
+        return "general"
+
+    def _section_for(self, *, kind: str, scope: str) -> str:
+        if kind == "preference":
+            return "Stable Preferences" if scope == "core" else "Preferences"
+        if kind == "habit":
+            return "Habits" if scope == "core" else "Current State"
+        if kind == "goal":
+            return "Stable Preferences" if scope == "core" else "Goals"
+        if kind == "profile":
+            return "Stable Preferences" if scope == "core" else "Current State"
+        return "Collaboration Rules" if scope == "core" else "Preferences"
+
+    def _label_for(self, *, kind: str, category: str) -> str:
+        if kind == "preference":
+            label_map = {
+                "food": "美食偏好",
+                "music": "音乐偏好",
+                "game": "游戏偏好",
+                "coding_workflow": "编码协作偏好",
+                "communication_style": "交流偏好",
+                "learning": "学习偏好",
+                "work_style": "工作偏好",
+            }
+            return label_map.get(category, "长期偏好")
+
+        if kind == "habit":
+            label_map = {
+                "coding_workflow": "编码习惯",
+                "learning": "学习习惯",
+                "work_style": "工作习惯",
+            }
+            return label_map.get(category, "使用习惯")
+
+        if kind == "goal":
+            return "长期目标"
+
+        if kind == "profile":
+            return "个人信息"
+
+        return "协作规则"
+
+    def _extract_preference_items(self, *, raw_input: str, normalized: str, category: str) -> list[str]:
+        if category == "food":
+            known = self._extract_known_items(
+                normalized,
+                ("冰激凌", "冰淇淋", "拉面", "牛肉面", "火锅", "寿司", "烧烤", "辣椒", "草莓", "川菜", "湘菜", "麻辣烫"),
+            )
+            extracted = known or self._extract_list_after_patterns(
+                raw_input,
+                patterns=("喜欢吃", "爱吃", "想吃", "喜欢喝", "爱喝", "想喝", "吃", "喝"),
+            )
+            return self._clean_extracted_items(extracted)
+
+        if category == "music":
+            known = self._extract_known_items(
+                normalized,
+                ("流行音乐", "民谣", "摇滚", "爵士", "古典", "电子音乐", "说唱"),
+            )
+            extracted = known or self._extract_list_after_patterns(
+                raw_input,
+                patterns=("喜欢听", "爱听", "想听", "听", "喜欢"),
+            )
+            return self._clean_extracted_items(extracted)
+
+        if category == "game":
+            game = self._extract_game_name(normalized)
+            extracted = [game] if game else self._extract_list_after_patterns(
+                raw_input,
+                patterns=("喜欢玩", "爱玩", "想玩", "玩"),
+            )
+            return self._clean_extracted_items(extracted)
+
+        if category in {"learning", "work_style", "general"}:
+            extracted = self._extract_list_after_patterns(
+                raw_input,
+                patterns=("喜欢", "偏好", "希望", "想要"),
+            )
+            return self._clean_extracted_items(extracted)
+
+        return []
+
+    def _build_preference_summary(
+        self,
+        *,
+        raw_input: str,
+        normalized: str,
+        category: str,
+        label: str,
+        items: list[str],
+    ) -> str:
+        if category == "coding_workflow":
+            detail = self._extract_coding_workflow_detail(raw_input, normalized)
+            return f"{label}：{detail}" if detail else ""
+
+        if label == "美食偏好" and items:
+            return f"{label}：喜欢吃{'、'.join(items)}。"
+
+        if label == "游戏偏好" and items:
+            return f"{label}：喜欢玩{'、'.join(items)}。"
+
+        if items:
+            return f"{label}：喜欢{'、'.join(items)}。"
+
+        detail = self._extract_preference_detail(raw_input)
+        return f"{label}：{detail}" if detail else ""
+
     def _extract_preference_detail(self, message: str) -> str:
+        message = self._clean_memory_content(message, explicit=False)
         if "听流行音乐" in message or "流行音乐" in message:
             return "喜欢流行音乐。"
 
@@ -341,8 +522,35 @@ class MemoryService:
 
         return f"喜欢{detail.rstrip('。')}。"
 
+    def _extract_goal_detail(self, message: str) -> str:
+        detail = self._clean_memory_content(message, explicit=False)
+        prefixes = (
+            "我的目标是",
+            "我的计划是",
+            "我打算",
+            "我准备",
+            "我想要",
+            "我想",
+        )
+        for prefix in prefixes:
+            if detail.startswith(prefix):
+                detail = detail[len(prefix):].strip(" ，,。")
+                break
+
+        return self._normalize_sentence(detail)
+
+    def _extract_profile_detail(self, message: str) -> str:
+        detail = self._clean_memory_content(message, explicit=False)
+        prefixes = ("我是", "我来自", "我的职业是", "我做", "我的身份是")
+        for prefix in prefixes:
+            if detail.startswith(prefix):
+                detail = detail[len(prefix):].strip(" ，,。")
+                break
+
+        return self._normalize_sentence(detail)
+
     def _extract_habit_detail(self, message: str) -> str:
-        detail = message
+        detail = self._clean_memory_content(message, explicit=False)
         prefixes = (
             "我平常",
             "我一般",
@@ -359,10 +567,58 @@ class MemoryService:
         return normalized
 
     def _extract_rule_detail(self, message: str) -> str:
-        normalized = self._normalize_sentence(message)
+        normalized = self._normalize_sentence(self._clean_memory_content(message, explicit=False))
         if not normalized.endswith("。"):
             normalized += "。"
         return normalized
+
+    def _extract_coding_workflow_detail(self, message: str, normalized: str) -> str:
+        lowered = normalized.lower()
+        if "codex" in lowered and any(token in normalized for token in ("方案", "编码", "写代码", "代码")):
+            if "先" in normalized and "再" in normalized:
+                return "使用 Codex 写代码时，偏好先给方案，再进行编码。"
+            return "使用 Codex 写代码时，偏好先沟通方案，再进行编码。"
+
+        detail = self._normalize_sentence(message)
+        return detail
+
+    def _extract_list_after_patterns(self, text: str, *, patterns: tuple[str, ...]) -> list[str]:
+        cleaned = self._clean_memory_content(text, explicit=False)
+        for pattern in patterns:
+            if pattern not in cleaned:
+                continue
+            fragment = cleaned.split(pattern, 1)[1].strip(" ：:，,。")
+            if not fragment:
+                continue
+            return [
+                item.strip()
+                for item in re.split(r"[、,，和及跟/]+", fragment)
+                if item.strip()
+            ]
+
+        return []
+
+    def _extract_known_items(self, normalized: str, known_values: tuple[str, ...]) -> list[str]:
+        found: list[str] = []
+        for value in known_values:
+            alias = "冰激凌" if value == "冰淇淋" else value
+            if value in normalized and alias not in found:
+                found.append(alias)
+
+        return found
+
+    def _clean_extracted_items(self, items: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in items:
+            normalized = item.strip(" ，,。！？；:：")
+            normalized = re.sub(r"^(我|也|还|更|最|平常|通常|一般)", "", normalized).strip()
+            normalized = re.sub(r"(呢|呀|哦|啊)$", "", normalized).strip()
+            if not normalized:
+                continue
+            if normalized not in cleaned:
+                cleaned.append(normalized)
+
+        return cleaned
 
     def _normalize_sentence(self, text: str) -> str:
         normalized = text.strip().strip("，,。")
@@ -375,9 +631,26 @@ class MemoryService:
         return normalized
 
     def _extract_food_name(self, normalized: str) -> str:
-        for food in ("冰激凌", "冰淇淋", "拉面", "牛肉面", "火锅", "寿司", "烧烤"):
+        for food in (
+            "冰激凌",
+            "冰淇淋",
+            "拉面",
+            "牛肉面",
+            "火锅",
+            "寿司",
+            "烧烤",
+            "辣椒",
+            "草莓",
+            "川菜",
+            "湘菜",
+            "麻辣烫",
+        ):
             if food in normalized:
                 return "冰激凌" if food == "冰淇淋" else food
+
+        match = re.search(r"(?:喜欢|爱|想)?吃([^\s，。！？；、]+)", normalized)
+        if match:
+            return match.group(1)
 
         return ""
 
@@ -408,18 +681,45 @@ class MemoryService:
 
         if candidate.label == "美食偏好":
             food = self._extract_food_name(candidate.summary)
+            if candidate.scope == "mode":
+                return f"记住啦，在这个模式下我会记得你喜欢吃{food}。"
             return f"记住啦，以后聊到吃的我会记得你喜欢{food}。"
 
         if candidate.label == "音乐偏好":
             music = self._extract_music_name(candidate.summary) or "这些音乐"
+            if candidate.scope == "mode":
+                return f"记住啦，在这个模式下我会记得你喜欢{music}。"
             return f"记住啦，以后聊音乐我会记得你喜欢{music}。"
 
         if candidate.label == "游戏偏好":
             game = self._extract_game_name(candidate.summary) or "这个游戏"
+            if candidate.scope == "mode":
+                return f"记住啦，在这个模式下我会记得你喜欢玩{game}。"
             return f"记住啦，以后聊游戏我会记得你喜欢玩{game}。"
 
         if candidate.label == "编码协作偏好":
+            if candidate.scope == "mode":
+                return "记住啦，这个模式下聊代码时我会先给你方案，再进入编码。"
             return "记住啦，以后聊代码时我会先给你方案，再进入编码。"
+
+        if candidate.label in {"交流偏好", "学习偏好", "工作偏好"}:
+            detail = candidate.summary.split("：", 1)[1] if "：" in candidate.summary else candidate.summary
+            if candidate.scope == "mode":
+                return f"记住啦，这个模式下我会按这个偏好来：{detail}"
+            return f"记住啦，我会按这个偏好来：{detail}"
+
+        if candidate.kind == "habit":
+            if candidate.scope == "mode":
+                return "记住啦，这个模式下我会参考你的这个习惯。"
+            return "记住啦，我会把这个作为你的习惯来理解。"
+
+        if candidate.kind == "goal":
+            if candidate.scope == "mode":
+                return "记住啦，这个模式下我会记得你的这个目标。"
+            return "记住啦，我会把这个作为你的长期目标。"
+
+        if candidate.kind == "profile":
+            return "记住啦，我会记得这条关于你的信息。"
 
         if candidate.scope == "mode":
             return "记住啦，这个模式下我会按你的偏好来。"
@@ -429,18 +729,44 @@ class MemoryService:
     def _duplicate_acknowledgement(self, candidate: MemoryCandidate) -> str:
         if candidate.label == "美食偏好":
             food = self._extract_food_name(candidate.summary)
+            if candidate.scope == "mode":
+                return f"这个模式下我已经记着啦，你喜欢吃{food}。"
             return f"我已经记着啦，你喜欢{food}。"
 
         if candidate.label == "音乐偏好":
             music = self._extract_music_name(candidate.summary) or "这些音乐"
+            if candidate.scope == "mode":
+                return f"这个模式下我已经记着啦，你喜欢{music}。"
             return f"我已经记着啦，你喜欢{music}。"
 
         if candidate.label == "游戏偏好":
             game = self._extract_game_name(candidate.summary) or "这个游戏"
+            if candidate.scope == "mode":
+                return f"这个模式下我已经记着啦，你喜欢玩{game}。"
             return f"我已经记着啦，你喜欢玩{game}。"
 
         if candidate.label == "编码协作偏好":
+            if candidate.scope == "mode":
+                return "这个模式下我已经记着啦，写代码时先给方案再编码。"
             return "我已经记着啦，写代码时先给方案再编码。"
+
+        if candidate.label in {"交流偏好", "学习偏好", "工作偏好"}:
+            if candidate.scope == "mode":
+                return "这个模式下我已经记着这条偏好啦。"
+            return "我已经记着这条偏好啦。"
+
+        if candidate.kind == "habit":
+            if candidate.scope == "mode":
+                return "这个模式下我已经记着你的这个习惯啦。"
+            return "我已经记着你的这个习惯啦。"
+
+        if candidate.kind == "goal":
+            if candidate.scope == "mode":
+                return "这个模式下我已经记着你的这个目标啦。"
+            return "我已经记着你的这个目标啦。"
+
+        if candidate.kind == "profile":
+            return "我已经记着这条关于你的信息啦。"
 
         return "我已经记着这条偏好啦。"
 
@@ -496,6 +822,26 @@ class MemoryService:
 
         content = content.removesuffix("这件事").strip()
         return content or message.strip()
+
+    def _clean_memory_content(self, message: str, *, explicit: bool) -> str:
+        content = self._clean_remember_content(message) if explicit else message.strip()
+
+        while True:
+            updated = re.sub(
+                r"^(在)?(当前模式|这个模式|本模式|所有模式|核心记忆|长期记忆)下?[:：,，\s]*",
+                "",
+                content,
+            ).strip()
+            updated = re.sub(
+                r"^(关于)?(当前模式|这个模式|本模式|核心记忆|长期记忆)[:：,，\s]*",
+                "",
+                updated,
+            ).strip()
+            if updated == content:
+                break
+            content = updated
+
+        return content.strip("，,。 ")
 
     def _clean_forget_content(self, message: str) -> str:
         content = message.strip()

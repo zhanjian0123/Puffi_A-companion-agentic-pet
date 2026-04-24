@@ -7,10 +7,13 @@ from dataclasses import dataclass
 class MemoryCandidate:
     scope: str
     mode: str
+    kind: str
+    category: str
     section: str
     label: str
     summary: str
     raw_input: str
+    items: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

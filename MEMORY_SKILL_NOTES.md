@@ -6,6 +6,10 @@
 
 - `SDK session` 负责短期上下文（`AI_PET_SESSION_*`），与长期 Markdown 记忆分开。
 - 长期记忆使用 Markdown 文件目录：`data/memory/`。
+- 长期记忆不再直接靠原句拼接写入，而是先经过 `detect -> extract -> merge -> render` 这条链路。
+- `detect` 先判断是否值得写入，以及写到 `core` 还是 `mode`。
+- `extract` 会先转成结构化记录，核心字段包括：`kind / category / items / summary`。
+- 当前 `kind` 主要包含：`preference / habit / rule / goal / profile`。
 - 显式写入：用户消息包含 `记住 / 帮我记 / 请记 / 以后要记得` 时，会写入长期记忆。
 - 显式删除：用户消息包含 `忘记 / 忘掉 / 不要记住 / 别记住` 时，会在匹配文件中删除对应 bullet。
 - 自动捕获：`AI_PET_MEMORY_AUTO_CAPTURE=true` 时，像 `我平常... / 我喜欢... / 我习惯... / 我希望...` 的稳定偏好句会自动写入记忆。
