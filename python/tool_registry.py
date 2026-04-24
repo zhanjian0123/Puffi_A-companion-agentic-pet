@@ -8,6 +8,7 @@ from agents import Tool
 
 from tools.layer1.get_current_date import get_current_date
 from tools.layer1.get_current_time import get_current_time
+from tools.layer1.knowledge_search import knowledge_search
 from tools.layer1.list_todos import list_todos
 from tools.layer2.add_todo import add_todo
 from tools.layer2.complete_todo import complete_todo
@@ -19,6 +20,7 @@ SAFE_READ_ONLY_TOOLS: list[Tool] = [
     get_current_time,
     get_current_date,
     list_todos,
+    knowledge_search,
 ]
 
 CONTROLLED_WRITE_TOOLS: list[Tool] = [

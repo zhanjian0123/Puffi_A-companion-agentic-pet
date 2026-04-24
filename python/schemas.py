@@ -37,3 +37,82 @@ class HealthResponse(BaseModel):
     api_key_configured: bool
     model: str
     base_url: str | None = None
+
+
+class KnowledgeImportRequest(BaseModel):
+    path: str | None = Field(default=None, description="Optional file or directory path to import.")
+
+
+class KnowledgeImportResponse(BaseModel):
+    imported: int
+    skipped: int
+    failed: int
+    messages: list[str]
+
+
+class KnowledgeQueryRequest(BaseModel):
+    query: str = Field(min_length=1)
+    top_k: int | None = Field(default=None, ge=1, le=20)
+
+
+class KnowledgeSource(BaseModel):
+    document: str
+    chunk_index: int
+    score: float
+    content: str
+    relations: list[str] | None = None
+
+
+class KnowledgeQueryResponse(BaseModel):
+    query: str
+    results: list[KnowledgeSource]
+
+
+class KnowledgeDocument(BaseModel):
+    path: str
+    title: str
+    hash: str
+    size: int
+    status: str
+    indexed_at: str | None = None
+    chunk_count: int = 0
+
+
+class KnowledgeDocumentsResponse(BaseModel):
+    documents: list[KnowledgeDocument]
+
+
+class KnowledgeStatusResponse(BaseModel):
+    enabled: bool
+    document_dir: str
+    index_db_path: str
+    document_count: int
+    chunk_count: int
+    entity_count: int = 0
+    relation_count: int = 0
+
+
+class KnowledgeEntity(BaseModel):
+    name: str
+    normalized_name: str
+    type: str
+    document_count: int
+    chunk_count: int
+    updated_at: str | None = None
+
+
+class KnowledgeEntitiesResponse(BaseModel):
+    entities: list[KnowledgeEntity]
+
+
+class KnowledgeRelation(BaseModel):
+    source_entity: str
+    relation: str
+    target_entity: str
+    document: str | None = None
+    chunk_index: int | None = None
+    confidence: float
+
+
+class KnowledgeRelationsResponse(BaseModel):
+    relations: list[KnowledgeRelation]

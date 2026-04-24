@@ -48,6 +48,11 @@ def _default_memory_dir() -> str:
     return str((project_root / "data" / "memory").resolve())
 
 
+def _default_knowledge_dir() -> str:
+    project_root = Path(__file__).resolve().parent.parent
+    return str((project_root / "knowledge").resolve())
+
+
 @dataclass(slots=True)
 class Settings:
     host: str = os.getenv("AI_PET_AGENT_HOST", "127.0.0.1")
@@ -74,6 +79,32 @@ class Settings:
     memory_mode_file_max_chars: int = int(os.getenv("AI_PET_MEMORY_MODE_FILE_MAX_CHARS", "10000"))
     skill_file_max_chars: int = int(os.getenv("AI_PET_SKILL_FILE_MAX_CHARS", "14000"))
     skill_index_file_max_chars: int = int(os.getenv("AI_PET_SKILL_INDEX_FILE_MAX_CHARS", "12000"))
+    knowledge_enabled: bool = os.getenv("AI_PET_KB_ENABLED", "true").lower() == "true"
+    knowledge_dir: str = _optional_env("AI_PET_KB_DIR") or _default_knowledge_dir()
+    knowledge_document_dir: str = (
+        _optional_env("AI_PET_KB_DOCUMENT_DIR")
+        or str((Path(_optional_env("AI_PET_KB_DIR") or _default_knowledge_dir()) / "documents").resolve())
+    )
+    knowledge_index_db_path: str = (
+        _optional_env("AI_PET_KB_INDEX_DB_PATH")
+        or str((Path(_optional_env("AI_PET_KB_DIR") or _default_knowledge_dir()) / "index" / "knowledge.sqlite3").resolve())
+    )
+    knowledge_top_k: int = int(os.getenv("AI_PET_KB_TOP_K", "5"))
+    knowledge_max_context_chars: int = int(os.getenv("AI_PET_KB_MAX_CONTEXT_CHARS", "6000"))
+    knowledge_chunk_max_chars: int = int(os.getenv("AI_PET_KB_CHUNK_MAX_CHARS", "1400"))
+    knowledge_auto_import_on_query: bool = os.getenv("AI_PET_KB_AUTO_IMPORT_ON_QUERY", "true").lower() == "true"
+    knowledge_import_on_startup: bool = os.getenv("AI_PET_KB_IMPORT_ON_STARTUP", "true").lower() == "true"
+    knowledge_embedding_enabled: bool = os.getenv("AI_PET_KB_EMBEDDING_ENABLED", "false").lower() == "true"
+    knowledge_embedding_model: str = os.getenv("AI_PET_KB_EMBEDDING_MODEL", "text-embedding-3-small")
+    knowledge_embedding_api_key: str | None = _optional_env("AI_PET_KB_EMBEDDING_API_KEY") or openai_api_key
+    knowledge_embedding_base_url: str | None = _optional_env("AI_PET_KB_EMBEDDING_BASE_URL") or openai_base_url
+    knowledge_embedding_dimensions: int | None = _optional_int_env("AI_PET_KB_EMBEDDING_DIMENSIONS")
+    knowledge_vector_weight: float = float(os.getenv("AI_PET_KB_VECTOR_WEIGHT", "0.55"))
+    knowledge_keyword_weight: float = float(os.getenv("AI_PET_KB_KEYWORD_WEIGHT", "0.45"))
+    knowledge_graph_enabled: bool = os.getenv("AI_PET_KB_GRAPH_ENABLED", "true").lower() == "true"
+    knowledge_graph_max_relations_per_chunk: int = int(os.getenv("AI_PET_KB_GRAPH_MAX_RELATIONS_PER_CHUNK", "8"))
+    knowledge_graph_weight: float = float(os.getenv("AI_PET_KB_GRAPH_WEIGHT", "0.20"))
+    knowledge_graph_context_limit: int = int(os.getenv("AI_PET_KB_GRAPH_CONTEXT_LIMIT", "2000"))
 
 
 settings = Settings()
