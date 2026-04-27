@@ -47,6 +47,26 @@ export interface KnowledgeUploadResult {
   failed: number;
 }
 
+export interface ReminderDueItem {
+  id: string;
+  title: string;
+  remind_at: string;
+  completed: boolean;
+  created_at: string;
+  completed_at?: string | null;
+  notified_at?: string | null;
+}
+
+export interface RemindersDueResult {
+  reminders: ReminderDueItem[];
+}
+
+export interface ReminderNotifiedResult {
+  success: boolean;
+  reminder?: ReminderDueItem | null;
+  message: string;
+}
+
 export class PythonAgentClient {
   constructor(private readonly options: PythonAgentClientOptions) {}
 
@@ -65,6 +85,19 @@ export class PythonAgentClient {
   async history(limit?: number): Promise<HistoryResult> {
     const search = typeof limit === 'number' ? `?limit=${encodeURIComponent(limit)}` : '';
     return this.requestJson<HistoryResult>(`/history${search}`);
+  }
+
+  async dueReminders(): Promise<RemindersDueResult> {
+    return this.requestJson<RemindersDueResult>('/reminders/due');
+  }
+
+  async markReminderNotified(reminderId: string): Promise<ReminderNotifiedResult> {
+    return this.requestJson<ReminderNotifiedResult>(
+      `/reminders/${encodeURIComponent(reminderId)}/notified`,
+      {
+        method: 'POST',
+      }
+    );
   }
 
   async uploadKnowledgeFile(

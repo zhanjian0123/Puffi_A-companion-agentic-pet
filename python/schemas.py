@@ -158,3 +158,23 @@ class KnowledgeRelation(BaseModel):
 
 class KnowledgeRelationsResponse(BaseModel):
     relations: list[KnowledgeRelation]
+
+
+class Reminder(BaseModel):
+    id: str
+    title: str
+    remind_at: str
+    completed: bool
+    created_at: str
+    completed_at: str | None = None
+    notified_at: str | None = None
+
+
+class RemindersDueResponse(BaseModel):
+    reminders: list[Reminder]
+
+
+class ReminderNotifiedResponse(BaseModel):
+    success: bool
+    reminder: Reminder | None = None
+    message: str

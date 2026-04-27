@@ -37,6 +37,22 @@ export default function App() {
     }
   }, [mode]);
 
+  useEffect(() => {
+    if (mode !== 'panel') {
+      return undefined;
+    }
+
+    const api = getElectronApi();
+    if (!api) {
+      return undefined;
+    }
+
+    return api.onReminderDue((event) => {
+      setHappy();
+      appendAssistantMessage(`提醒你：${event.title}\n\n时间：${event.remindAt}\nID：${event.id}`);
+    });
+  }, [appendAssistantMessage, mode, setHappy]);
+
   const setPanelOpen = async (nextOpen: boolean) => {
     await requireElectronApi().setPanelOpen(nextOpen);
   };

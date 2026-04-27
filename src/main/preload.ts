@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ChatRequestPayload, ChatStreamEvent, KnowledgeUploadProgressEvent } from '../shared/types';
+import type {
+  ChatRequestPayload,
+  ChatStreamEvent,
+  KnowledgeUploadProgressEvent,
+  ReminderDueEvent,
+} from '../shared/types';
 
 try {
   ipcRenderer.send('bridge:ready');
@@ -36,6 +41,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener('knowledge:upload-progress', listener);
+      };
+    },
+    onReminderDue: (callback: (event: ReminderDueEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: ReminderDueEvent) => {
+        callback(payload);
+      };
+
+      ipcRenderer.on('reminder:due', listener);
+
+      return () => {
+        ipcRenderer.removeListener('reminder:due', listener);
       };
     },
     setPanelOpen: (isOpen: boolean) => ipcRenderer.invoke('window:set-panel-open', isOpen),

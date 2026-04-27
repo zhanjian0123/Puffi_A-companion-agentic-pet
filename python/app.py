@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -28,8 +29,12 @@ from schemas import (
     KnowledgeSource,
     KnowledgeStatusResponse,
     KnowledgeUploadResponse,
+    Reminder,
+    ReminderNotifiedResponse,
+    RemindersDueResponse,
 )
 from service import AgentService
+from tools.storage import ReminderItem, tool_storage
 
 agent_service = AgentService()
 knowledge_service = get_knowledge_service()
@@ -235,6 +240,25 @@ async def knowledge_relations(
     )
 
 
+@app.get("/reminders/due", response_model=RemindersDueResponse)
+async def reminders_due() -> RemindersDueResponse:
+    reminders = await asyncio.to_thread(tool_storage.due_reminders)
+    return RemindersDueResponse(reminders=[to_reminder_response(reminder) for reminder in reminders])
+
+
+@app.post("/reminders/{reminder_id}/notified", response_model=ReminderNotifiedResponse)
+async def reminder_notified(reminder_id: str) -> ReminderNotifiedResponse:
+    reminder = await asyncio.to_thread(tool_storage.mark_reminder_notified, reminder_id)
+    if reminder is None:
+        return ReminderNotifiedResponse(success=False, reminder=None, message="没有找到该提醒。")
+
+    return ReminderNotifiedResponse(
+        success=True,
+        reminder=to_reminder_response(reminder),
+        message="提醒已标记为已通知。",
+    )
+
+
 def to_indexing_state_response(state) -> KnowledgeIndexingStateResponse | None:
     if state is None:
         return None
@@ -248,4 +272,16 @@ def to_indexing_state_response(state) -> KnowledgeIndexingStateResponse | None:
         failed=state.failed,
         messages=state.messages or [],
         last_error=state.last_error,
+    )
+
+
+def to_reminder_response(reminder: ReminderItem) -> Reminder:
+    return Reminder(
+        id=reminder.id,
+        title=reminder.title,
+        remind_at=reminder.remind_at,
+        completed=reminder.completed,
+        created_at=reminder.created_at,
+        completed_at=reminder.completed_at,
+        notified_at=reminder.notified_at,
     )

@@ -1,10 +1,13 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, type WebContents } from 'electron';
 import { createPanelWindow, createPetWindow, positionPanelWindow } from './app/createMainWindow';
 import { bootstrapApp } from './bootstrap';
 import { registerIpcHandlers } from './ipc/registerHandlers';
+import { ReminderScheduler } from './reminders/ReminderScheduler';
+import type { ReminderDueItem } from './python/PythonAgentClient';
 
 let petWindow: BrowserWindow | null = null;
 let panelWindow: BrowserWindow | null = null;
+let reminderScheduler: ReminderScheduler | null = null;
 
 function syncPanelWindowToPet(): void {
   if (petWindow && panelWindow && !petWindow.isDestroyed() && !panelWindow.isDestroyed() && panelWindow.isVisible()) {
@@ -84,6 +87,42 @@ function openPanelWindow(): void {
   showPanel();
 }
 
+async function showReminder(reminder: ReminderDueItem): Promise<WebContents | null> {
+  void reminder;
+  if (!petWindow || petWindow.isDestroyed()) {
+    return null;
+  }
+
+  const nextPanelWindow = ensurePanelWindow();
+  if (!nextPanelWindow) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const sendWhenReady = () => {
+      if (!petWindow || petWindow.isDestroyed() || !panelWindow || panelWindow.isDestroyed()) {
+        resolve(null);
+        return;
+      }
+
+      positionPanelWindow(panelWindow, petWindow);
+      panelWindow.show();
+      panelWindow.focus();
+      const webContents = panelWindow.webContents;
+      setTimeout(() => {
+        resolve(webContents.isDestroyed() ? null : webContents);
+      }, 250);
+    };
+
+    if (nextPanelWindow.webContents.isLoadingMainFrame()) {
+      nextPanelWindow.webContents.once('did-finish-load', sendWhenReady);
+      return;
+    }
+
+    sendWhenReady();
+  });
+}
+
 app.whenReady().then(async () => {
   console.log('[Main] App ready');
   const services = await bootstrapApp();
@@ -97,6 +136,11 @@ app.whenReady().then(async () => {
 
   petWindow = createPetWindow();
   attachPetWindow(petWindow);
+  reminderScheduler = new ReminderScheduler({
+    agentClient: services.agentClient,
+    onReminderDue: showReminder,
+  });
+  reminderScheduler.start();
   console.log('[Main] Core initialized');
 
   app.on('activate', () => {
@@ -112,6 +156,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  reminderScheduler?.stop();
+  reminderScheduler = null;
 });
 
 process.on('uncaughtException', (error) => {

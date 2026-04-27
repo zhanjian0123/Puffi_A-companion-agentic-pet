@@ -22,6 +22,12 @@ export interface KnowledgeUploadProgressEvent {
   message?: string;
 }
 
+export interface ReminderDueEvent {
+  id: string;
+  title: string;
+  remindAt: string;
+}
+
 export interface ElectronAPI {
   chat: (payload: ChatRequestPayload) => Promise<{ response: string; action?: unknown }>;
   history: (limit?: number) => Promise<{ messages: ChatHistoryMessage[] }>;
@@ -29,6 +35,7 @@ export interface ElectronAPI {
   onChatStreamEvent: (callback: (event: ChatStreamEvent) => void) => () => void;
   uploadKnowledgeFile: (file: unknown, requestId: string) => Promise<{ message: string }>;
   onKnowledgeUploadProgress: (callback: (event: KnowledgeUploadProgressEvent) => void) => () => void;
+  onReminderDue: (callback: (event: ReminderDueEvent) => void) => () => void;
   setPanelOpen: (isOpen: boolean) => Promise<{ success: boolean }>;
   togglePanel: () => Promise<{ success: boolean; isOpen: boolean }>;
   startWindowDrag: (x: number, y: number) => Promise<{ success: boolean }>;
