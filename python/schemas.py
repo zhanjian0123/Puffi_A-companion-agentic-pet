@@ -50,6 +50,28 @@ class KnowledgeImportResponse(BaseModel):
     messages: list[str]
 
 
+class KnowledgeIndexRequest(BaseModel):
+    path: str | None = Field(default=None, description="Optional file or directory path to index.")
+
+
+class KnowledgeIndexingStateResponse(BaseModel):
+    status: str
+    reason: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    imported: int = 0
+    skipped: int = 0
+    failed: int = 0
+    messages: list[str] = Field(default_factory=list)
+    last_error: str | None = None
+
+
+class KnowledgeIndexResponse(BaseModel):
+    started: bool
+    message: str
+    state: KnowledgeIndexingStateResponse
+
+
 class KnowledgeUploadResponse(BaseModel):
     message: str
     filename: str
@@ -69,9 +91,16 @@ class KnowledgeSource(BaseModel):
     score: float
     content: str
     relations: list[str] | None = None
+    entities: list[str] | None = None
+    summaries: list[str] | None = None
 
 
 class KnowledgeQueryResponse(BaseModel):
+    query: str
+    results: list[KnowledgeSource]
+
+
+class KnowledgeDebugQueryResponse(BaseModel):
     query: str
     results: list[KnowledgeSource]
 
@@ -98,6 +127,7 @@ class KnowledgeStatusResponse(BaseModel):
     chunk_count: int
     entity_count: int = 0
     relation_count: int = 0
+    indexing: KnowledgeIndexingStateResponse | None = None
 
 
 class KnowledgeEntity(BaseModel):
@@ -120,6 +150,10 @@ class KnowledgeRelation(BaseModel):
     document: str | None = None
     chunk_index: int | None = None
     confidence: float
+    description: str | None = None
+    evidence: str | None = None
+    extractor: str | None = None
+    model: str | None = None
 
 
 class KnowledgeRelationsResponse(BaseModel):

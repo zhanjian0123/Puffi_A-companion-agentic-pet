@@ -38,23 +38,39 @@ class KnowledgeStore:
         keywords: list[str],
         entities: list[str],
         graph_chunks: list[tuple[list[ExtractedEntity], list[ExtractedRelation]]] | None = None,
+        graph_extractor: str | None = None,
+        graph_model: str | None = None,
     ) -> None:
         now = datetime.now().isoformat(timespec="seconds")
 
         with self._connect() as connection:
             cursor = connection.execute(
                 """
-                INSERT INTO documents(path, title, hash, size, status, indexed_at, graph_indexed_at)
-                VALUES (?, ?, ?, ?, 'indexed', ?, ?)
+                INSERT INTO documents(
+                    path, title, hash, size, status, indexed_at,
+                    graph_indexed_at, graph_extractor, graph_model
+                )
+                VALUES (?, ?, ?, ?, 'indexed', ?, ?, ?, ?)
                 ON CONFLICT(path) DO UPDATE SET
                     title = excluded.title,
                     hash = excluded.hash,
                     size = excluded.size,
                     status = excluded.status,
                     indexed_at = excluded.indexed_at,
-                    graph_indexed_at = excluded.graph_indexed_at
+                    graph_indexed_at = excluded.graph_indexed_at,
+                    graph_extractor = excluded.graph_extractor,
+                    graph_model = excluded.graph_model
                 """,
-                (path, title, file_hash, size, now, now if graph_chunks is not None else None),
+                (
+                    path,
+                    title,
+                    file_hash,
+                    size,
+                    now,
+                    now if graph_chunks is not None else None,
+                    graph_extractor if graph_chunks is not None else None,
+                    graph_model if graph_chunks is not None else None,
+                ),
             )
             document_id = self._document_id(connection, path)
             if document_id is None:
@@ -108,6 +124,40 @@ class KnowledgeStore:
 
         return [(int(row["id"]), str(row["content"])) for row in rows]
 
+    def graph_items_missing_embeddings(self, *, model: str) -> list[tuple[str, int, str]]:
+        with self._connect() as connection:
+            entity_rows = connection.execute(
+                """
+                SELECT e.id, e.name, e.type, e.description
+                FROM entities e
+                LEFT JOIN entity_embeddings emb ON emb.entity_id = e.id AND emb.model = ?
+                WHERE emb.entity_id IS NULL
+                ORDER BY e.id
+                """,
+                (model,),
+            ).fetchall()
+            relation_rows = connection.execute(
+                """
+                SELECT r.id, r.source_entity, r.relation, r.target_entity, r.description, r.evidence
+                FROM relations r
+                LEFT JOIN relation_embeddings emb ON emb.relation_id = r.id AND emb.model = ?
+                WHERE emb.relation_id IS NULL
+                ORDER BY r.id
+                """,
+                (model,),
+            ).fetchall()
+
+        items: list[tuple[str, int, str]] = []
+        for row in entity_rows:
+            text = self._entity_embedding_text(row)
+            if text:
+                items.append(("entity", int(row["id"]), text))
+        for row in relation_rows:
+            text = self._relation_embedding_text(row)
+            if text:
+                items.append(("relation", int(row["id"]), text))
+        return items
+
     def save_embeddings(self, *, model: str, embeddings: list[tuple[int, list[float]]]) -> None:
         now = datetime.now().isoformat(timespec="seconds")
         with self._connect() as connection:
@@ -130,20 +180,164 @@ class KnowledgeStore:
                     ),
                 )
 
+    def save_graph_embeddings(self, *, model: str, embeddings: list[tuple[str, int, list[float]]]) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._connect() as connection:
+            for kind, item_id, embedding in embeddings:
+                if kind == "entity":
+                    connection.execute(
+                        """
+                        INSERT INTO entity_embeddings(entity_id, model, dimensions, embedding_json, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(entity_id, model) DO UPDATE SET
+                            dimensions = excluded.dimensions,
+                            embedding_json = excluded.embedding_json,
+                            updated_at = excluded.updated_at
+                        """,
+                        (item_id, model, len(embedding), json.dumps(embedding), now),
+                    )
+                elif kind == "relation":
+                    connection.execute(
+                        """
+                        INSERT INTO relation_embeddings(relation_id, model, dimensions, embedding_json, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(relation_id, model) DO UPDATE SET
+                            dimensions = excluded.dimensions,
+                            embedding_json = excluded.embedding_json,
+                            updated_at = excluded.updated_at
+                        """,
+                        (item_id, model, len(embedding), json.dumps(embedding), now),
+                    )
+
+    def upsert_document_summary(
+        self,
+        *,
+        path: str,
+        summary: str,
+        keywords: list[str],
+        topics: list[str],
+        extractor: str,
+        model: str | None,
+    ) -> None:
+        if not summary.strip():
+            return
+
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._connect() as connection:
+            document_id = self._document_id(connection, path)
+            if document_id is None:
+                return
+            connection.execute(
+                """
+                INSERT INTO document_summaries(
+                    document_id, summary, keywords, topics, extractor, model, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(document_id) DO UPDATE SET
+                    summary = excluded.summary,
+                    keywords = excluded.keywords,
+                    topics = excluded.topics,
+                    extractor = excluded.extractor,
+                    model = excluded.model,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    document_id,
+                    summary,
+                    json.dumps(keywords, ensure_ascii=False),
+                    json.dumps(topics, ensure_ascii=False),
+                    extractor,
+                    model,
+                    now,
+                ),
+            )
+            connection.execute("DELETE FROM document_summary_embeddings WHERE document_id = ?", (document_id,))
+
+    def document_summaries_missing_embeddings(self, *, model: str) -> list[tuple[int, str]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT s.document_id, d.title, d.path, s.summary, s.keywords, s.topics
+                FROM document_summaries s
+                JOIN documents d ON d.id = s.document_id
+                LEFT JOIN document_summary_embeddings emb
+                    ON emb.document_id = s.document_id AND emb.model = ?
+                WHERE emb.document_id IS NULL
+                ORDER BY s.document_id
+                """,
+                (model,),
+            ).fetchall()
+
+        items: list[tuple[int, str]] = []
+        for row in rows:
+            text = self._summary_embedding_text(row)
+            if text:
+                items.append((int(row["document_id"]), text))
+        return items
+
+    def save_document_summary_embeddings(self, *, model: str, embeddings: list[tuple[int, list[float]]]) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._connect() as connection:
+            for document_id, embedding in embeddings:
+                connection.execute(
+                    """
+                    INSERT INTO document_summary_embeddings(
+                        document_id, model, dimensions, embedding_json, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(document_id, model) DO UPDATE SET
+                        dimensions = excluded.dimensions,
+                        embedding_json = excluded.embedding_json,
+                        updated_at = excluded.updated_at
+                    """,
+                    (document_id, model, len(embedding), json.dumps(embedding), now),
+                )
     def document_hash(self, path: str) -> str | None:
         with self._connect() as connection:
             row = connection.execute("SELECT hash FROM documents WHERE path = ?", (path,)).fetchone()
             return str(row["hash"]) if row else None
 
-    def document_is_current(self, *, path: str, file_hash: str, require_graph: bool) -> bool:
+    def document_is_current(
+        self,
+        *,
+        path: str,
+        file_hash: str,
+        require_graph: bool,
+        graph_extractor: str | None = None,
+        graph_model: str | None = None,
+        require_summary: bool = False,
+        summary_extractor: str | None = None,
+        summary_model: str | None = None,
+    ) -> bool:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT hash, graph_indexed_at FROM documents WHERE path = ?",
+                """
+                SELECT
+                    d.hash,
+                    d.graph_indexed_at,
+                    d.graph_extractor,
+                    d.graph_model,
+                    s.extractor AS summary_extractor,
+                    s.model AS summary_model
+                FROM documents d
+                LEFT JOIN document_summaries s ON s.document_id = d.id
+                WHERE d.path = ?
+                """,
                 (path,),
             ).fetchone()
             if not row or str(row["hash"]) != file_hash:
                 return False
             if require_graph and not row["graph_indexed_at"]:
+                return False
+            if require_graph and graph_extractor and row["graph_extractor"] != graph_extractor:
+                return False
+            if require_graph and graph_model and row["graph_model"] != graph_model:
+                return False
+            if require_summary and not row["summary_extractor"]:
+                return False
+            if require_summary and summary_extractor and row["summary_extractor"] != summary_extractor:
+                return False
+            if require_summary and summary_model and row["summary_model"] != summary_model:
                 return False
             return True
 
@@ -161,6 +355,8 @@ class KnowledgeStore:
         graph_entities: list[str] | None = None,
         graph_weight: float = 0.0,
         graph_context_limit: int = 0,
+        include_debug_context: bool = False,
+        global_query: bool = False,
     ) -> list[KnowledgeSearchResult]:
         normalized_query = " ".join(query.strip().split())
         if not normalized_query:
@@ -184,10 +380,47 @@ class KnowledgeStore:
                 for row, score in self._vector_search(connection, query_embedding, embedding_model, top_k * 8):
                     self._merge_score(vector_scores, row, score=score)
                     self._ensure_result(scored, row)
+                for row, score in self._summary_vector_search(
+                    connection,
+                    query_embedding,
+                    embedding_model,
+                    top_k * 4,
+                ):
+                    self._merge_score(vector_scores, row, score=score if global_query else score * 0.7)
+                    self._ensure_summary_result(scored, row)
+
+            if global_query:
+                for row, score in self._summary_like_search(connection, normalized_query, top_k * 4):
+                    self._merge_score(keyword_scores, row, score=score)
+                    self._ensure_summary_result(scored, row)
 
             graph_relations: dict[int, list[str]] = {}
+            graph_entity_context: dict[int, list[str]] = {}
             if graph_enabled and graph_entities:
                 for row, score, relations in self._graph_search(connection, graph_entities, top_k * 8):
+                    self._merge_score(graph_scores, row, score=score)
+                    self._ensure_result(scored, row)
+                    chunk_id = int(row["id"])
+                    graph_relations.setdefault(chunk_id, []).extend(relations)
+
+            if graph_enabled and query_embedding and embedding_model:
+                for row, score, entity_context in self._entity_vector_search(
+                    connection,
+                    query_embedding,
+                    embedding_model,
+                    top_k * 8,
+                ):
+                    self._merge_score(graph_scores, row, score=score)
+                    self._ensure_result(scored, row)
+                    chunk_id = int(row["id"])
+                    graph_entity_context.setdefault(chunk_id, []).extend(entity_context)
+
+                for row, score, relations in self._relation_vector_search(
+                    connection,
+                    query_embedding,
+                    embedding_model,
+                    top_k * 8,
+                ):
                     self._merge_score(graph_scores, row, score=score)
                     self._ensure_result(scored, row)
                     chunk_id = int(row["id"])
@@ -196,6 +429,9 @@ class KnowledgeStore:
             for chunk_id, relations in graph_relations.items():
                 if chunk_id in scored:
                     scored[chunk_id].relations = relations
+            for chunk_id, entities in graph_entity_context.items():
+                if chunk_id in scored:
+                    scored[chunk_id].entities = entities
 
         self._apply_hybrid_scores(
             scored=scored,
@@ -222,6 +458,9 @@ class KnowledgeStore:
             relations: list[str] | None = None
             if relation_context and graph_context_limit > 0:
                 relations = self._trim_relations(relation_context, graph_context_limit)
+            entities = None
+            if result.entities and (include_debug_context or graph_context_limit > 0):
+                entities = self._trim_relations(result.entities, graph_context_limit or 1200)
 
             trimmed.append(
                 KnowledgeSearchResult(
@@ -230,6 +469,8 @@ class KnowledgeStore:
                     score=round(result.score, 4),
                     content=content,
                     relations=relations,
+                    entities=entities,
+                    summaries=result.summaries,
                 )
             )
 
@@ -310,7 +551,11 @@ class KnowledgeStore:
                     r.target_entity,
                     d.path AS document,
                     c.chunk_index,
-                    r.confidence
+                    r.confidence,
+                    r.description,
+                    r.evidence,
+                    r.extractor,
+                    r.model
                 FROM relations r
                 LEFT JOIN documents d ON d.id = r.document_id
                 LEFT JOIN chunks c ON c.id = r.chunk_id
@@ -329,6 +574,10 @@ class KnowledgeStore:
                 document=row["document"],
                 chunk_index=row["chunk_index"],
                 confidence=float(row["confidence"]),
+                description=row["description"],
+                evidence=row["evidence"],
+                extractor=row["extractor"],
+                model=row["model"],
             )
             for row in rows
         ]
@@ -371,11 +620,15 @@ class KnowledgeStore:
                     size INTEGER NOT NULL,
                     status TEXT NOT NULL,
                     indexed_at TEXT,
-                    graph_indexed_at TEXT
+                    graph_indexed_at TEXT,
+                    graph_extractor TEXT,
+                    graph_model TEXT
                 )
                 """
             )
             self._ensure_column(connection, "documents", "graph_indexed_at", "TEXT")
+            self._ensure_column(connection, "documents", "graph_extractor", "TEXT")
+            self._ensure_column(connection, "documents", "graph_model", "TEXT")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS chunks (
@@ -406,6 +659,59 @@ class KnowledgeStore:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS entity_embeddings (
+                    entity_id INTEGER NOT NULL,
+                    model TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    embedding_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(entity_id, model),
+                    FOREIGN KEY(entity_id) REFERENCES entities(id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS relation_embeddings (
+                    relation_id INTEGER NOT NULL,
+                    model TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    embedding_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(relation_id, model),
+                    FOREIGN KEY(relation_id) REFERENCES relations(id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS document_summaries (
+                    document_id INTEGER PRIMARY KEY,
+                    summary TEXT NOT NULL,
+                    keywords TEXT NOT NULL DEFAULT '[]',
+                    topics TEXT NOT NULL DEFAULT '[]',
+                    extractor TEXT,
+                    model TEXT,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS document_summary_embeddings (
+                    document_id INTEGER NOT NULL,
+                    model TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    embedding_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(document_id, model),
+                    FOREIGN KEY(document_id) REFERENCES document_summaries(document_id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
                 USING fts5(title, path, content)
                 """
@@ -417,12 +723,18 @@ class KnowledgeStore:
                     name TEXT NOT NULL,
                     normalized_name TEXT NOT NULL UNIQUE,
                     type TEXT NOT NULL,
+                    description TEXT,
+                    extractor TEXT,
+                    model TEXT,
                     document_count INTEGER NOT NULL DEFAULT 0,
                     chunk_count INTEGER NOT NULL DEFAULT 0,
                     updated_at TEXT
                 )
                 """
             )
+            self._ensure_column(connection, "entities", "description", "TEXT")
+            self._ensure_column(connection, "entities", "extractor", "TEXT")
+            self._ensure_column(connection, "entities", "model", "TEXT")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS chunk_entities (
@@ -444,10 +756,20 @@ class KnowledgeStore:
                     target_entity TEXT NOT NULL,
                     document_id INTEGER,
                     chunk_id INTEGER,
-                    confidence REAL NOT NULL DEFAULT 0.0
+                    confidence REAL NOT NULL DEFAULT 0.0,
+                    description TEXT,
+                    evidence TEXT,
+                    extractor TEXT,
+                    model TEXT,
+                    created_at TEXT
                 )
                 """
             )
+            self._ensure_column(connection, "relations", "description", "TEXT")
+            self._ensure_column(connection, "relations", "evidence", "TEXT")
+            self._ensure_column(connection, "relations", "extractor", "TEXT")
+            self._ensure_column(connection, "relations", "model", "TEXT")
+            self._ensure_column(connection, "relations", "created_at", "TEXT")
 
     def _document_id(self, connection: sqlite3.Connection, path: str) -> int | None:
         row = connection.execute("SELECT id FROM documents WHERE path = ?", (path,)).fetchone()
@@ -472,6 +794,9 @@ class KnowledgeStore:
             connection.execute("DELETE FROM chunks_fts WHERE rowid = ?", (chunk_id,))
             connection.execute("DELETE FROM chunk_embeddings WHERE chunk_id = ?", (chunk_id,))
             connection.execute("DELETE FROM chunk_entities WHERE chunk_id = ?", (chunk_id,))
+            relation_rows = connection.execute("SELECT id FROM relations WHERE chunk_id = ?", (chunk_id,)).fetchall()
+            for relation_row in relation_rows:
+                connection.execute("DELETE FROM relation_embeddings WHERE relation_id = ?", (int(relation_row["id"]),))
             connection.execute("DELETE FROM relations WHERE chunk_id = ?", (chunk_id,))
         connection.execute("DELETE FROM chunks WHERE document_id = ?", (document_id,))
         self._refresh_entity_counts(connection)
@@ -599,6 +924,162 @@ class KnowledgeStore:
         scored_rows.sort(key=lambda item: item[1], reverse=True)
         return scored_rows[:limit]
 
+    def _summary_vector_search(
+        self,
+        connection: sqlite3.Connection,
+        query_embedding: list[float],
+        model: str,
+        limit: int,
+    ) -> list[tuple[sqlite3.Row, float]]:
+        rows = connection.execute(
+            """
+            SELECT
+                -d.id AS id,
+                d.path AS document,
+                -1 AS chunk_index,
+                s.summary AS content,
+                s.keywords,
+                s.topics,
+                e.embedding_json
+            FROM document_summary_embeddings e
+            JOIN document_summaries s ON s.document_id = e.document_id
+            JOIN documents d ON d.id = s.document_id
+            WHERE e.model = ?
+            """,
+            (model,),
+        ).fetchall()
+
+        scored_rows: list[tuple[sqlite3.Row, float]] = []
+        for row in rows:
+            try:
+                embedding = json.loads(str(row["embedding_json"]))
+            except json.JSONDecodeError:
+                continue
+            score = self._cosine_similarity(query_embedding, embedding)
+            if score > 0:
+                scored_rows.append((row, score))
+
+        scored_rows.sort(key=lambda item: item[1], reverse=True)
+        return scored_rows[:limit]
+
+    def _summary_like_search(self, connection: sqlite3.Connection, query: str, limit: int) -> list[tuple[sqlite3.Row, float]]:
+        terms = self._query_terms(query)
+        if not terms:
+            return []
+
+        clauses = ["s.summary LIKE ? OR s.keywords LIKE ? OR s.topics LIKE ?"] * len(terms)
+        params: list[str] = []
+        for term in terms:
+            params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
+        rows = connection.execute(
+            f"""
+            SELECT
+                -d.id AS id,
+                d.path AS document,
+                -1 AS chunk_index,
+                s.summary AS content,
+                s.keywords,
+                s.topics
+            FROM document_summaries s
+            JOIN documents d ON d.id = s.document_id
+            WHERE {" OR ".join(clauses)}
+            LIMIT ?
+            """,
+            (*params, limit),
+        ).fetchall()
+        return [(row, 1.0) for row in rows]
+
+    def _entity_vector_search(
+        self,
+        connection: sqlite3.Connection,
+        query_embedding: list[float],
+        model: str,
+        limit: int,
+    ) -> list[tuple[sqlite3.Row, float, list[str]]]:
+        rows = connection.execute(
+            """
+            SELECT
+                e.id AS entity_id,
+                e.name,
+                e.type,
+                e.description,
+                emb.embedding_json,
+                c.id,
+                d.path AS document,
+                c.chunk_index,
+                c.content
+            FROM entity_embeddings emb
+            JOIN entities e ON e.id = emb.entity_id
+            JOIN chunk_entities ce ON ce.entity_id = e.id
+            JOIN chunks c ON c.id = ce.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE emb.model = ?
+            """,
+            (model,),
+        ).fetchall()
+
+        scored_rows: list[tuple[sqlite3.Row, float, list[str]]] = []
+        for row in rows:
+            try:
+                embedding = json.loads(str(row["embedding_json"]))
+            except json.JSONDecodeError:
+                continue
+            score = self._cosine_similarity(query_embedding, embedding)
+            if score <= 0:
+                continue
+            context = f"{row['name']}（{row['type']}）"
+            if row["description"]:
+                context = f"{context}: {row['description']}"
+            scored_rows.append((row, score, [context]))
+
+        scored_rows.sort(key=lambda item: item[1], reverse=True)
+        return scored_rows[:limit]
+
+    def _relation_vector_search(
+        self,
+        connection: sqlite3.Connection,
+        query_embedding: list[float],
+        model: str,
+        limit: int,
+    ) -> list[tuple[sqlite3.Row, float, list[str]]]:
+        rows = connection.execute(
+            """
+            SELECT
+                r.id AS relation_id,
+                r.source_entity,
+                r.relation,
+                r.target_entity,
+                r.description,
+                r.evidence,
+                emb.embedding_json,
+                c.id,
+                d.path AS document,
+                c.chunk_index,
+                c.content
+            FROM relation_embeddings emb
+            JOIN relations r ON r.id = emb.relation_id
+            JOIN chunks c ON c.id = r.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE emb.model = ?
+            """,
+            (model,),
+        ).fetchall()
+
+        scored_rows: list[tuple[sqlite3.Row, float, list[str]]] = []
+        for row in rows:
+            try:
+                embedding = json.loads(str(row["embedding_json"]))
+            except json.JSONDecodeError:
+                continue
+            score = self._cosine_similarity(query_embedding, embedding)
+            if score <= 0:
+                continue
+            relation_text = self._format_relation_context(row)
+            scored_rows.append((row, score, [relation_text]))
+
+        scored_rows.sort(key=lambda item: item[1], reverse=True)
+        return scored_rows[:limit]
+
     def _graph_search(
         self,
         connection: sqlite3.Connection,
@@ -624,7 +1105,9 @@ class KnowledgeStore:
                     r.source_entity,
                     r.relation,
                     r.target_entity,
-                    r.confidence
+                    r.confidence,
+                    r.description,
+                    r.evidence
                 FROM relations r
                 JOIN chunks c ON c.id = r.chunk_id
                 JOIN documents d ON d.id = c.document_id
@@ -640,7 +1123,7 @@ class KnowledgeStore:
                 chunk_id = int(row["id"])
                 confidence = float(row["confidence"])
                 chunk_scores[chunk_id] = max(chunk_scores.get(chunk_id, 0.0), confidence)
-                relation_text = f"{row['source_entity']} {row['relation']} {row['target_entity']}"
+                relation_text = self._format_relation_context(row)
                 chunk_relations.setdefault(chunk_id, [])
                 if relation_text not in chunk_relations[chunk_id]:
                     chunk_relations[chunk_id].append(relation_text)
@@ -686,6 +1169,27 @@ class KnowledgeStore:
             chunk_index=int(row["chunk_index"]),
             score=0.0,
             content=str(row["content"]),
+        )
+
+    def _ensure_summary_result(self, scored: dict[int, KnowledgeSearchResult], row: sqlite3.Row) -> None:
+        summary_id = int(row["id"])
+        if summary_id in scored:
+            return
+
+        summary = str(row["content"])
+        topics = self._json_list(row["topics"]) if "topics" in row.keys() else []
+        keywords = self._json_list(row["keywords"]) if "keywords" in row.keys() else []
+        summary_context = summary
+        tags = topics or keywords
+        if tags:
+            summary_context = f"{summary_context}（主题：{'、'.join(tags[:6])}）"
+
+        scored[summary_id] = KnowledgeSearchResult(
+            document=str(row["document"]),
+            chunk_index=-1,
+            score=0.0,
+            content=summary,
+            summaries=[summary_context],
         )
 
     def _apply_hybrid_scores(
@@ -750,8 +1254,11 @@ class KnowledgeStore:
         for relation in relations:
             connection.execute(
                 """
-                INSERT INTO relations(source_entity, relation, target_entity, document_id, chunk_id, confidence)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO relations(
+                    source_entity, relation, target_entity, document_id, chunk_id,
+                    confidence, description, evidence, extractor, model, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     relation.source,
@@ -760,6 +1267,11 @@ class KnowledgeStore:
                     document_id,
                     chunk_id,
                     relation.confidence,
+                    relation.description,
+                    relation.evidence,
+                    relation.extractor,
+                    relation.model,
+                    datetime.now().isoformat(timespec="seconds"),
                 ),
             )
 
@@ -770,20 +1282,62 @@ class KnowledgeStore:
         normalized_name = self._normalize_entity(entity.name)
         connection.execute(
             """
-            INSERT INTO entities(name, normalized_name, type, updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO entities(name, normalized_name, type, description, extractor, model, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(normalized_name) DO UPDATE SET
                 name = excluded.name,
                 type = excluded.type,
+                description = COALESCE(excluded.description, entities.description),
+                extractor = COALESCE(excluded.extractor, entities.extractor),
+                model = COALESCE(excluded.model, entities.model),
                 updated_at = excluded.updated_at
             """,
-            (entity.name, normalized_name, entity.type, now),
+            (entity.name, normalized_name, entity.type, entity.description, entity.extractor, entity.model, now),
         )
         row = connection.execute(
             "SELECT id FROM entities WHERE normalized_name = ?",
             (normalized_name,),
         ).fetchone()
         return int(row["id"])
+
+    def _format_relation_context(self, row: sqlite3.Row) -> str:
+        relation_text = f"{row['source_entity']} {row['relation']} {row['target_entity']}"
+        if "description" in row.keys() and row["description"]:
+            relation_text = f"{relation_text}（说明：{row['description']}）"
+        if "evidence" in row.keys() and row["evidence"]:
+            relation_text = f"{relation_text}（证据：{row['evidence']}）"
+        return relation_text
+
+    def _entity_embedding_text(self, row: sqlite3.Row) -> str:
+        parts = [str(row["name"]), str(row["type"])]
+        if row["description"]:
+            parts.append(str(row["description"]))
+        return " ".join(part for part in parts if part).strip()
+
+    def _relation_embedding_text(self, row: sqlite3.Row) -> str:
+        parts = [str(row["source_entity"]), str(row["relation"]), str(row["target_entity"])]
+        if row["description"]:
+            parts.append(str(row["description"]))
+        if row["evidence"]:
+            parts.append(f"证据：{row['evidence']}")
+        return " ".join(part for part in parts if part).strip()
+
+    def _summary_embedding_text(self, row: sqlite3.Row) -> str:
+        parts = [str(row["title"]), str(row["path"]), str(row["summary"])]
+        parts.extend(self._json_list(row["keywords"]))
+        parts.extend(self._json_list(row["topics"]))
+        return " ".join(part for part in parts if part).strip()
+
+    def _json_list(self, value: object) -> list[str]:
+        if not value:
+            return []
+        try:
+            parsed = json.loads(str(value))
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [str(item) for item in parsed if str(item).strip()]
 
     def _refresh_entity_counts(self, connection: sqlite3.Connection) -> None:
         connection.execute(

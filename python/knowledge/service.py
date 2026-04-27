@@ -10,16 +10,20 @@ from time import perf_counter
 from config import settings
 from knowledge.converter import convert_to_markdown
 from knowledge.embeddings import EmbeddingClient, EmbeddingConfig
-from knowledge.graph import RuleGraphExtractor
+from knowledge.graph import GraphExtraction, RuleGraphExtractor
+from knowledge.llm_graph import LLMGraphConfig, LLMGraphExtractor
 from knowledge.models import (
     KnowledgeDocument,
     KnowledgeEntity,
+    KnowledgeIndexingState,
+    KnowledgeIndexStartResult,
     KnowledgeImportResult,
     KnowledgeRelation,
     KnowledgeSearchResult,
     KnowledgeStatus,
     KnowledgeUploadResult,
 )
+from knowledge.summarizer import DocumentSummarizer, SummaryConfig
 from knowledge.store import KnowledgeStore
 
 
@@ -44,6 +48,12 @@ class KnowledgeService:
         graph_max_relations_per_chunk: int,
         graph_weight: float,
         graph_context_limit: int,
+        graph_llm_extractor: LLMGraphExtractor,
+        graph_extractor_mode: str,
+        graph_llm_fallback_to_rule: bool,
+        summarizer: DocumentSummarizer,
+        summary_on_import: bool,
+        summary_embedding_enabled: bool,
         upload_enabled: bool,
         upload_dir: str,
         converted_dir: str,
@@ -69,6 +79,18 @@ class KnowledgeService:
         self._graph_weight = max(graph_weight, 0.0)
         self._graph_context_limit = max(graph_context_limit, 0)
         self._graph_extractor = RuleGraphExtractor()
+        self._graph_llm_extractor = graph_llm_extractor
+        self._graph_extractor_mode = self._normalize_graph_extractor_mode(graph_extractor_mode)
+        self._graph_llm_fallback_to_rule = graph_llm_fallback_to_rule
+        self._last_graph_extractor_name: str | None = None
+        self._last_graph_model: str | None = None
+        self._graph_had_llm_error = False
+        self._summarizer = summarizer
+        self._summary_on_import = summary_on_import
+        self._summary_embedding_enabled = summary_embedding_enabled
+        self._indexing_state = KnowledgeIndexingState(messages=[])
+        self._indexing_task: asyncio.Task[None] | None = None
+        self._indexing_lock = asyncio.Lock()
         self._store = KnowledgeStore(
             db_path=index_db_path,
             document_dir=str(self._document_dir),
@@ -82,7 +104,92 @@ class KnowledgeService:
         result = await asyncio.to_thread(self._import_documents_sync, path)
         if result.imported and self._embedding_client.is_available:
             await self._ensure_embeddings()
+            await self._ensure_graph_embeddings()
+            await self._ensure_summary_embeddings()
         return result
+
+    async def start_background_import(
+        self,
+        *,
+        path: str | None = None,
+        reason: str,
+    ) -> KnowledgeIndexStartResult:
+        if not self._enabled:
+            state = self.indexing_state()
+            return KnowledgeIndexStartResult(started=False, state=state, message="知识库未启用。")
+
+        async with self._indexing_lock:
+            if self._indexing_task and not self._indexing_task.done():
+                return KnowledgeIndexStartResult(
+                    started=False,
+                    state=self.indexing_state(),
+                    message="知识库索引任务已在运行。",
+                )
+
+            self._indexing_state = KnowledgeIndexingState(
+                status="running",
+                reason=reason,
+                started_at=datetime.now().isoformat(timespec="seconds"),
+                finished_at=None,
+                imported=0,
+                skipped=0,
+                failed=0,
+                messages=[],
+                last_error=None,
+            )
+            self._indexing_task = asyncio.create_task(self._run_background_import(path=path, reason=reason))
+            return KnowledgeIndexStartResult(
+                started=True,
+                state=self.indexing_state(),
+                message="知识库索引已在后台启动。",
+            )
+
+    def indexing_state(self) -> KnowledgeIndexingState:
+        messages = self._indexing_state.messages or []
+        return KnowledgeIndexingState(
+            status=self._indexing_state.status,
+            reason=self._indexing_state.reason,
+            started_at=self._indexing_state.started_at,
+            finished_at=self._indexing_state.finished_at,
+            imported=self._indexing_state.imported,
+            skipped=self._indexing_state.skipped,
+            failed=self._indexing_state.failed,
+            messages=list(messages),
+            last_error=self._indexing_state.last_error,
+        )
+
+    async def _run_background_import(self, *, path: str | None, reason: str) -> None:
+        try:
+            result = await self.import_documents(path)
+            self._indexing_state = KnowledgeIndexingState(
+                status="failed" if result.failed else "done",
+                reason=reason,
+                started_at=self._indexing_state.started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                imported=result.imported,
+                skipped=result.skipped,
+                failed=result.failed,
+                messages=result.messages,
+                last_error=None if not result.failed else "; ".join(result.messages[-3:]),
+            )
+            print(
+                "[Knowledge] background_import "
+                f"reason={reason} imported={result.imported} skipped={result.skipped} failed={result.failed}",
+                flush=True,
+            )
+        except Exception as error:
+            self._indexing_state = KnowledgeIndexingState(
+                status="failed",
+                reason=reason,
+                started_at=self._indexing_state.started_at,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                imported=0,
+                skipped=0,
+                failed=1,
+                messages=[],
+                last_error=str(error),
+            )
+            print(f"[Knowledge] background_import error reason={reason} error={error}", flush=True)
 
     async def upload_document(self, *, filename: str, content: bytes) -> KnowledgeUploadResult:
         if not self._enabled:
@@ -104,18 +211,18 @@ class KnowledgeService:
 
         return await asyncio.to_thread(self._upload_document_sync, filename, content)
 
-    async def query(self, query: str, *, top_k: int | None = None) -> list[KnowledgeSearchResult]:
+    async def query(
+        self,
+        query: str,
+        *,
+        top_k: int | None = None,
+        debug: bool = False,
+    ) -> list[KnowledgeSearchResult]:
         if not self._enabled:
             return []
 
-        if self._auto_import_on_query:
-            import_result = await self.import_documents()
-            if import_result.imported or import_result.failed:
-                print(
-                    "[Knowledge] auto_import "
-                    f"imported={import_result.imported} skipped={import_result.skipped} failed={import_result.failed}",
-                    flush=True,
-                )
+        if self._auto_import_on_query and self._indexing_state.status in {"idle", "failed"}:
+            await self.start_background_import(reason="query_auto_import")
 
         limit = top_k or self._top_k
         query_embedding: list[float] | None = None
@@ -125,6 +232,8 @@ class KnowledgeService:
         if self._embedding_client.is_available:
             try:
                 await self._ensure_embeddings()
+                await self._ensure_graph_embeddings()
+                await self._ensure_summary_embeddings()
                 started_at = perf_counter()
                 query_embedding = await self._embedding_client.embed_query(query)
                 embedding_model = self._embedding_client.model
@@ -156,6 +265,8 @@ class KnowledgeService:
             graph_entities=graph_entities,
             graph_weight=self._graph_weight,
             graph_context_limit=self._graph_context_limit,
+            include_debug_context=debug,
+            global_query=self._is_global_query(query),
         )
 
     async def list_documents(self) -> list[KnowledgeDocument]:
@@ -168,7 +279,9 @@ class KnowledgeService:
         return await asyncio.to_thread(self._store.list_relations, query=query, limit=limit)
 
     async def status(self) -> KnowledgeStatus:
-        return await asyncio.to_thread(self._store.status)
+        status = await asyncio.to_thread(self._store.status)
+        status.indexing = self.indexing_state()
+        return status
 
     def _import_documents_sync(self, path: str | None) -> KnowledgeImportResult:
         try:
@@ -194,6 +307,11 @@ class KnowledgeService:
                     path=relative_path,
                     file_hash=file_hash,
                     require_graph=self._graph_enabled,
+                    graph_extractor=self._current_graph_extractor_name(),
+                    graph_model=self._current_graph_model(),
+                    require_summary=self._summary_required(),
+                    summary_extractor=self._current_summary_extractor_name(),
+                    summary_model=self._current_summary_model(),
                 ):
                     skipped += 1
                     messages.append(f"跳过未变化文件：{relative_path}")
@@ -218,7 +336,19 @@ class KnowledgeService:
                     keywords=keywords,
                     entities=entities,
                     graph_chunks=graph_chunks,
+                    graph_extractor=self._last_graph_extractor_name or self._current_graph_extractor_name(),
+                    graph_model=self._last_graph_model,
                 )
+                if self._summary_required():
+                    summary = self._summarizer.summarize(title=file_path.stem, text=text)
+                    self._store.upsert_document_summary(
+                        path=relative_path,
+                        summary=summary.summary,
+                        keywords=summary.keywords,
+                        topics=summary.topics,
+                        extractor=summary.extractor,
+                        model=summary.model,
+                    )
                 imported += 1
                 messages.append(f"已导入：{relative_path} ({len(chunks)} chunks)")
                 print(f"[Knowledge] imported path={relative_path} chunks={len(chunks)}", flush=True)
@@ -321,6 +451,86 @@ class KnowledgeService:
             )
         except Exception as error:
             print(f"[Knowledge] embedding error error={error}", flush=True)
+
+    async def _ensure_graph_embeddings(self) -> None:
+        if not self._graph_enabled or not self._embedding_client.is_available:
+            return
+
+        missing = await asyncio.to_thread(
+            self._store.graph_items_missing_embeddings,
+            model=self._embedding_client.model,
+        )
+        if not missing:
+            return
+
+        started_at = perf_counter()
+        print(
+            f"[Knowledge] graph_embedding start items={len(missing)} model={self._embedding_client.model}",
+            flush=True,
+        )
+
+        try:
+            texts = [text for _, _, text in missing]
+            vectors = await self._embedding_client.embed_texts(texts)
+            graph_embeddings = [
+                (kind, item_id, vector)
+                for (kind, item_id, _), vector in zip(missing, vectors, strict=False)
+                if vector
+            ]
+            await asyncio.to_thread(
+                self._store.save_graph_embeddings,
+                model=self._embedding_client.model,
+                embeddings=graph_embeddings,
+            )
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            print(
+                f"[Knowledge] graph_embedding success items={len(graph_embeddings)} elapsed={elapsed_ms:.1f}ms",
+                flush=True,
+            )
+        except Exception as error:
+            print(f"[Knowledge] graph_embedding error error={error}", flush=True)
+
+    async def _ensure_summary_embeddings(self) -> None:
+        if (
+            not self._summary_embedding_enabled
+            or not self._summarizer.is_enabled
+            or not self._embedding_client.is_available
+        ):
+            return
+
+        missing = await asyncio.to_thread(
+            self._store.document_summaries_missing_embeddings,
+            model=self._embedding_client.model,
+        )
+        if not missing:
+            return
+
+        started_at = perf_counter()
+        print(
+            f"[Knowledge] summary_embedding start documents={len(missing)} model={self._embedding_client.model}",
+            flush=True,
+        )
+
+        try:
+            texts = [text for _, text in missing]
+            vectors = await self._embedding_client.embed_texts(texts)
+            summary_embeddings = [
+                (document_id, vector)
+                for (document_id, _), vector in zip(missing, vectors, strict=False)
+                if vector
+            ]
+            await asyncio.to_thread(
+                self._store.save_document_summary_embeddings,
+                model=self._embedding_client.model,
+                embeddings=summary_embeddings,
+            )
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            print(
+                f"[Knowledge] summary_embedding success documents={len(summary_embeddings)} elapsed={elapsed_ms:.1f}ms",
+                flush=True,
+            )
+        except Exception as error:
+            print(f"[Knowledge] summary_embedding error error={error}", flush=True)
 
     def _resolve_import_target(self, path: str | None) -> Path:
         if not path:
@@ -429,21 +639,67 @@ class KnowledgeService:
     def _extract_graph_chunks(self, chunks: list[str]):
         graph_chunks = []
         relation_count = 0
+        llm_relation_count = 0
+        rule_relation_count = 0
+        llm_entity_count = 0
+        rule_entity_count = 0
+        self._graph_had_llm_error = False
         for chunk in chunks:
-            extraction = self._graph_extractor.extract_chunk(
-                chunk,
-                max_relations=self._graph_max_relations_per_chunk,
-            )
+            extraction = self._extract_graph_chunk(chunk)
             relation_count += len(extraction.relations)
+            llm_entity_count += sum(1 for entity in extraction.entities if entity.extractor == "llm")
+            rule_entity_count += sum(1 for entity in extraction.entities if entity.extractor != "llm")
+            if extraction.relations and any(relation.extractor == "llm" for relation in extraction.relations):
+                llm_relation_count += len(extraction.relations)
+            else:
+                rule_relation_count += len(extraction.relations)
             graph_chunks.append((extraction.entities, extraction.relations))
+
+        if llm_relation_count or llm_entity_count:
+            self._last_graph_extractor_name = self._graph_extractor_mode
+            self._last_graph_model = self._current_graph_model()
+        elif rule_relation_count or rule_entity_count:
+            self._last_graph_extractor_name = "rule"
+            self._last_graph_model = None
+        elif self._graph_had_llm_error:
+            self._last_graph_extractor_name = "rule"
+            self._last_graph_model = None
+        else:
+            self._last_graph_extractor_name = self._current_graph_extractor_name()
+            self._last_graph_model = self._current_graph_model()
 
         if relation_count:
             print(
-                f"[Knowledge] graph_extract chunks={len(chunks)} relations={relation_count}",
+                "[Knowledge] graph_extract "
+                f"extractor={self._current_graph_extractor_name()} model={self._current_graph_model() or '-'} "
+                f"chunks={len(chunks)} relations={relation_count} "
+                f"llm_relations={llm_relation_count} rule_relations={rule_relation_count}",
                 flush=True,
             )
 
         return graph_chunks
+
+    def _extract_graph_chunk(self, chunk: str):
+        if self._should_use_llm_graph():
+            try:
+                extraction = self._graph_llm_extractor.extract_chunk(
+                    chunk,
+                    max_relations=self._graph_max_relations_per_chunk,
+                )
+                if extraction.entities or extraction.relations:
+                    return extraction
+                if self._graph_extractor_mode == "llm":
+                    return extraction
+            except Exception as error:
+                print(f"[Knowledge] graph_llm error error={error}", flush=True)
+                self._graph_had_llm_error = True
+                if self._graph_extractor_mode == "llm" or not self._graph_llm_fallback_to_rule:
+                    return GraphExtraction(entities=[], relations=[])
+
+        return self._graph_extractor.extract_chunk(
+            chunk,
+            max_relations=self._graph_max_relations_per_chunk,
+        )
 
     def _extract_entities(self, text: str) -> list[str]:
         terms = re.findall(r"[A-Z][A-Za-z0-9_]*(?:Service|Agent|Store|Tool|API|SDK|RAG)|[\u4e00-\u9fff]{2,8}", text)
@@ -470,6 +726,61 @@ class KnowledgeService:
                 continue
             extensions.add(extension if extension.startswith(".") else f".{extension}")
         return extensions or {".md", ".txt"}
+
+    def _normalize_graph_extractor_mode(self, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized in {"rule", "llm", "hybrid"}:
+            return normalized
+        return "hybrid"
+
+    def _should_use_llm_graph(self) -> bool:
+        if self._graph_extractor_mode == "rule":
+            return False
+        return self._graph_llm_extractor.is_available
+
+    def _current_graph_extractor_name(self) -> str | None:
+        if not self._graph_enabled:
+            return None
+        if self._should_use_llm_graph():
+            return self._graph_extractor_mode
+        return "rule"
+
+    def _current_graph_model(self) -> str | None:
+        if self._should_use_llm_graph():
+            return self._graph_llm_extractor.model
+        return None
+
+    def _summary_required(self) -> bool:
+        return self._summarizer.is_enabled and self._summary_on_import
+
+    def _current_summary_extractor_name(self) -> str | None:
+        if not self._summary_required():
+            return None
+        return "llm" if self._summarizer.model else "rule"
+
+    def _current_summary_model(self) -> str | None:
+        if not self._summary_required():
+            return None
+        return self._summarizer.model
+
+    def _is_global_query(self, query: str) -> bool:
+        return any(
+            keyword in query
+            for keyword in (
+                "整体",
+                "全部",
+                "总结",
+                "梳理",
+                "核心",
+                "体系",
+                "架构",
+                "流程",
+                "有哪些",
+                "对比",
+                "优缺点",
+                "怎么设计",
+            )
+        )
 
     def _hashed_filename(self, filename: str, hash_suffix: str) -> str:
         path = Path(filename)
@@ -521,6 +832,32 @@ def get_knowledge_service() -> KnowledgeService:
             graph_max_relations_per_chunk=settings.knowledge_graph_max_relations_per_chunk,
             graph_weight=settings.knowledge_graph_weight,
             graph_context_limit=settings.knowledge_graph_context_limit,
+            graph_llm_extractor=LLMGraphExtractor(
+                LLMGraphConfig(
+                    enabled=settings.knowledge_graph_llm_enabled,
+                    model=settings.knowledge_graph_llm_model,
+                    api_key=settings.knowledge_graph_llm_api_key,
+                    base_url=settings.knowledge_graph_llm_base_url,
+                    max_entities_per_chunk=settings.knowledge_graph_llm_max_entities_per_chunk,
+                    max_relations_per_chunk=settings.knowledge_graph_llm_max_relations_per_chunk,
+                    min_confidence=settings.knowledge_graph_llm_min_confidence,
+                    max_chars=settings.knowledge_graph_llm_max_chars,
+                )
+            ),
+            graph_extractor_mode=settings.knowledge_graph_extractor,
+            graph_llm_fallback_to_rule=settings.knowledge_graph_llm_fallback_to_rule,
+            summarizer=DocumentSummarizer(
+                SummaryConfig(
+                    enabled=settings.knowledge_summary_enabled,
+                    llm_enabled=settings.knowledge_summary_llm_enabled,
+                    model=settings.knowledge_summary_model,
+                    api_key=settings.knowledge_summary_api_key,
+                    base_url=settings.knowledge_summary_base_url,
+                    max_chars=settings.knowledge_summary_max_chars,
+                )
+            ),
+            summary_on_import=settings.knowledge_summary_on_import,
+            summary_embedding_enabled=settings.knowledge_summary_embedding_enabled,
             upload_enabled=settings.knowledge_upload_enabled,
             upload_dir=settings.knowledge_upload_dir,
             converted_dir=settings.knowledge_converted_dir,

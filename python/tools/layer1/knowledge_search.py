@@ -26,6 +26,8 @@ async def knowledge_search(query: str) -> str:
                     f"相关度：{result.score:.4f}",
                     result.content,
                 ]
+                + ([f"文档摘要：{'；'.join(result.summaries)}"] if result.summaries else [])
+                + ([f"相关实体：{'；'.join(result.entities)}"] if result.entities else [])
                 + ([f"相关关系：{'；'.join(result.relations)}"] if result.relations else [])
             )
         )

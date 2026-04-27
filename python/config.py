@@ -35,6 +35,14 @@ def _optional_int_env(name: str) -> int | None:
     return int(value)
 
 
+def _optional_float_env(name: str, default: float) -> float:
+    value = _optional_env(name)
+    if value is None:
+        return default
+
+    return float(value)
+
+
 def _default_session_db_path() -> str:
     return str(Path.home() / ".ai-pet" / "agent_sessions.sqlite3")
 
@@ -113,6 +121,28 @@ class Settings:
     knowledge_graph_max_relations_per_chunk: int = int(os.getenv("AI_PET_KB_GRAPH_MAX_RELATIONS_PER_CHUNK", "8"))
     knowledge_graph_weight: float = float(os.getenv("AI_PET_KB_GRAPH_WEIGHT", "0.20"))
     knowledge_graph_context_limit: int = int(os.getenv("AI_PET_KB_GRAPH_CONTEXT_LIMIT", "2000"))
+    knowledge_graph_llm_enabled: bool = os.getenv("AI_PET_KB_GRAPH_LLM_ENABLED", "false").lower() == "true"
+    knowledge_graph_extractor: str = os.getenv("AI_PET_KB_GRAPH_EXTRACTOR", "hybrid")
+    knowledge_graph_llm_model: str = _optional_env("AI_PET_KB_GRAPH_LLM_MODEL") or openai_model
+    knowledge_graph_llm_api_key: str | None = _optional_env("AI_PET_KB_GRAPH_LLM_API_KEY") or openai_api_key
+    knowledge_graph_llm_base_url: str | None = _optional_env("AI_PET_KB_GRAPH_LLM_BASE_URL") or openai_base_url
+    knowledge_graph_llm_max_entities_per_chunk: int = int(os.getenv("AI_PET_KB_GRAPH_LLM_MAX_ENTITIES_PER_CHUNK", "30"))
+    knowledge_graph_llm_max_relations_per_chunk: int = int(os.getenv("AI_PET_KB_GRAPH_LLM_MAX_RELATIONS_PER_CHUNK", "20"))
+    knowledge_graph_llm_min_confidence: float = _optional_float_env("AI_PET_KB_GRAPH_LLM_MIN_CONFIDENCE", 0.65)
+    knowledge_graph_llm_max_chars: int = int(os.getenv("AI_PET_KB_GRAPH_LLM_MAX_CHARS", "3000"))
+    knowledge_graph_llm_fallback_to_rule: bool = (
+        os.getenv("AI_PET_KB_GRAPH_LLM_FALLBACK_TO_RULE", "true").lower() == "true"
+    )
+    knowledge_summary_enabled: bool = os.getenv("AI_PET_KB_SUMMARY_ENABLED", "true").lower() == "true"
+    knowledge_summary_model: str = _optional_env("AI_PET_KB_SUMMARY_MODEL") or openai_model
+    knowledge_summary_api_key: str | None = _optional_env("AI_PET_KB_SUMMARY_API_KEY") or openai_api_key
+    knowledge_summary_base_url: str | None = _optional_env("AI_PET_KB_SUMMARY_BASE_URL") or openai_base_url
+    knowledge_summary_max_chars: int = int(os.getenv("AI_PET_KB_SUMMARY_MAX_CHARS", "6000"))
+    knowledge_summary_on_import: bool = os.getenv("AI_PET_KB_SUMMARY_ON_IMPORT", "true").lower() == "true"
+    knowledge_summary_llm_enabled: bool = os.getenv("AI_PET_KB_SUMMARY_LLM_ENABLED", "false").lower() == "true"
+    knowledge_summary_embedding_enabled: bool = (
+        os.getenv("AI_PET_KB_SUMMARY_EMBEDDING_ENABLED", "true").lower() == "true"
+    )
     knowledge_upload_enabled: bool = os.getenv("AI_PET_KB_UPLOAD_ENABLED", "true").lower() == "true"
     knowledge_upload_dir: str = _optional_env("AI_PET_KB_UPLOAD_DIR") or _default_knowledge_upload_dir()
     knowledge_converted_dir: str = _optional_env("AI_PET_KB_CONVERTED_DIR") or _default_knowledge_converted_dir()

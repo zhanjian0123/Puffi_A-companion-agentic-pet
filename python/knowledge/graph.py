@@ -8,6 +8,9 @@ import re
 class ExtractedEntity:
     name: str
     type: str
+    description: str | None = None
+    extractor: str = "rule"
+    model: str | None = None
 
 
 @dataclass(slots=True)
@@ -16,6 +19,10 @@ class ExtractedRelation:
     relation: str
     target: str
     confidence: float
+    description: str | None = None
+    evidence: str | None = None
+    extractor: str = "rule"
+    model: str | None = None
 
 
 @dataclass(slots=True)

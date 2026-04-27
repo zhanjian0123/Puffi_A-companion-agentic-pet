@@ -12,6 +12,26 @@ class KnowledgeImportResult:
 
 
 @dataclass(slots=True)
+class KnowledgeIndexingState:
+    status: str = "idle"
+    reason: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    imported: int = 0
+    skipped: int = 0
+    failed: int = 0
+    messages: list[str] | None = None
+    last_error: str | None = None
+
+
+@dataclass(slots=True)
+class KnowledgeIndexStartResult:
+    started: bool
+    state: KnowledgeIndexingState
+    message: str
+
+
+@dataclass(slots=True)
 class KnowledgeUploadResult:
     filename: str
     source_path: str
@@ -40,6 +60,8 @@ class KnowledgeSearchResult:
     score: float
     content: str
     relations: list[str] | None = None
+    entities: list[str] | None = None
+    summaries: list[str] | None = None
 
 
 @dataclass(slots=True)
@@ -51,6 +73,7 @@ class KnowledgeStatus:
     chunk_count: int
     entity_count: int
     relation_count: int
+    indexing: KnowledgeIndexingState | None = None
 
 
 @dataclass(slots=True)
@@ -71,3 +94,13 @@ class KnowledgeRelation:
     document: str | None
     chunk_index: int | None
     confidence: float
+    description: str | None = None
+    evidence: str | None = None
+    extractor: str | None = None
+    model: str | None = None
+
+
+@dataclass(slots=True)
+class KnowledgeDebugResult:
+    query: str
+    results: list[KnowledgeSearchResult]

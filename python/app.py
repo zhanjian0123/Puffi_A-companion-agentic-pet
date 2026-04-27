@@ -15,10 +15,14 @@ from schemas import (
     KnowledgeDocumentsResponse,
     KnowledgeEntitiesResponse,
     KnowledgeEntity,
+    KnowledgeIndexRequest,
+    KnowledgeIndexResponse,
+    KnowledgeIndexingStateResponse,
     KnowledgeImportRequest,
     KnowledgeImportResponse,
     KnowledgeQueryRequest,
     KnowledgeQueryResponse,
+    KnowledgeDebugQueryResponse,
     KnowledgeRelation,
     KnowledgeRelationsResponse,
     KnowledgeSource,
@@ -37,13 +41,8 @@ async def import_knowledge_on_startup() -> None:
     if not settings.knowledge_enabled or not settings.knowledge_import_on_startup:
         return
 
-    result = await knowledge_service.import_documents()
-    if result.imported or result.failed:
-        print(
-            "[Knowledge] startup_import "
-            f"imported={result.imported} skipped={result.skipped} failed={result.failed}",
-            flush=True,
-        )
+    result = await knowledge_service.start_background_import(reason="startup")
+    print(f"[Knowledge] startup_import {result.message}", flush=True)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -81,6 +80,7 @@ async def knowledge_status() -> KnowledgeStatusResponse:
         chunk_count=status.chunk_count,
         entity_count=status.entity_count,
         relation_count=status.relation_count,
+        indexing=to_indexing_state_response(status.indexing),
     )
 
 
@@ -111,6 +111,16 @@ async def knowledge_import(request: KnowledgeImportRequest) -> KnowledgeImportRe
         skipped=result.skipped,
         failed=result.failed,
         messages=result.messages,
+    )
+
+
+@app.post("/knowledge/index", response_model=KnowledgeIndexResponse)
+async def knowledge_index(request: KnowledgeIndexRequest = KnowledgeIndexRequest()) -> KnowledgeIndexResponse:
+    result = await knowledge_service.start_background_import(path=request.path, reason="manual")
+    return KnowledgeIndexResponse(
+        started=result.started,
+        message=result.message,
+        state=to_indexing_state_response(result.state),
     )
 
 
@@ -154,6 +164,28 @@ async def knowledge_query(request: KnowledgeQueryRequest) -> KnowledgeQueryRespo
                 score=result.score,
                 content=result.content,
                 relations=result.relations,
+                entities=result.entities,
+                summaries=result.summaries,
+            )
+            for result in results
+        ],
+    )
+
+
+@app.post("/knowledge/debug-query", response_model=KnowledgeDebugQueryResponse)
+async def knowledge_debug_query(request: KnowledgeQueryRequest) -> KnowledgeDebugQueryResponse:
+    results = await knowledge_service.query(request.query, top_k=request.top_k, debug=True)
+    return KnowledgeDebugQueryResponse(
+        query=request.query,
+        results=[
+            KnowledgeSource(
+                document=result.document,
+                chunk_index=result.chunk_index,
+                score=result.score,
+                content=result.content,
+                relations=result.relations,
+                entities=result.entities,
+                summaries=result.summaries,
             )
             for result in results
         ],
@@ -193,7 +225,27 @@ async def knowledge_relations(
                 document=relation.document,
                 chunk_index=relation.chunk_index,
                 confidence=relation.confidence,
+                description=relation.description,
+                evidence=relation.evidence,
+                extractor=relation.extractor,
+                model=relation.model,
             )
             for relation in relations
         ]
+    )
+
+
+def to_indexing_state_response(state) -> KnowledgeIndexingStateResponse | None:
+    if state is None:
+        return None
+    return KnowledgeIndexingStateResponse(
+        status=state.status,
+        reason=state.reason,
+        started_at=state.started_at,
+        finished_at=state.finished_at,
+        imported=state.imported,
+        skipped=state.skipped,
+        failed=state.failed,
+        messages=state.messages or [],
+        last_error=state.last_error,
     )
