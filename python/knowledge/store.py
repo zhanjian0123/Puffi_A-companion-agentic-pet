@@ -9,7 +9,14 @@ import sqlite3
 from pathlib import Path
 
 from knowledge.graph import ExtractedEntity, ExtractedRelation
-from knowledge.models import KnowledgeDocument, KnowledgeEntity, KnowledgeRelation, KnowledgeSearchResult, KnowledgeStatus
+from knowledge.models import (
+    KnowledgeDeleteResult,
+    KnowledgeDocument,
+    KnowledgeEntity,
+    KnowledgeRelation,
+    KnowledgeSearchResult,
+    KnowledgeStatus,
+)
 
 
 class KnowledgeStore:
@@ -340,6 +347,84 @@ class KnowledgeStore:
             if require_summary and summary_model and row["summary_model"] != summary_model:
                 return False
             return True
+
+    def delete_document(self, path: str) -> KnowledgeDeleteResult:
+        with self._connect() as connection:
+            row = connection.execute("SELECT id FROM documents WHERE path = ?", (path,)).fetchone()
+            if row is None:
+                return KnowledgeDeleteResult(
+                    deleted=False,
+                    path=path,
+                    chunks_deleted=0,
+                    relations_deleted=0,
+                    summaries_deleted=0,
+                    orphan_entities_deleted=0,
+                    message="知识库索引中没有找到该文档。",
+                )
+
+            document_id = int(row["id"])
+            chunk_rows = connection.execute(
+                "SELECT id FROM chunks WHERE document_id = ?",
+                (document_id,),
+            ).fetchall()
+            chunk_ids = [int(chunk_row["id"]) for chunk_row in chunk_rows]
+            chunks_deleted = len(chunk_ids)
+            relations_deleted = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM relations WHERE document_id = ?",
+                    (document_id,),
+                ).fetchone()[0]
+            )
+            summaries_deleted = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM document_summaries WHERE document_id = ?",
+                    (document_id,),
+                ).fetchone()[0]
+            )
+
+            for chunk_id in chunk_ids:
+                relation_rows = connection.execute(
+                    "SELECT id FROM relations WHERE chunk_id = ?",
+                    (chunk_id,),
+                ).fetchall()
+                for relation_row in relation_rows:
+                    connection.execute(
+                        "DELETE FROM relation_embeddings WHERE relation_id = ?",
+                        (int(relation_row["id"]),),
+                    )
+                connection.execute("DELETE FROM chunks_fts WHERE rowid = ?", (chunk_id,))
+                connection.execute("DELETE FROM chunk_embeddings WHERE chunk_id = ?", (chunk_id,))
+                connection.execute("DELETE FROM chunk_entities WHERE chunk_id = ?", (chunk_id,))
+
+            connection.execute(
+                """
+                DELETE FROM relation_embeddings
+                WHERE relation_id IN (
+                    SELECT id FROM relations WHERE document_id = ?
+                )
+                """,
+                (document_id,),
+            )
+            connection.execute("DELETE FROM relations WHERE document_id = ?", (document_id,))
+            connection.execute(
+                "DELETE FROM document_summary_embeddings WHERE document_id = ?",
+                (document_id,),
+            )
+            connection.execute("DELETE FROM document_summaries WHERE document_id = ?", (document_id,))
+            connection.execute("DELETE FROM chunks WHERE document_id = ?", (document_id,))
+            connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+            self._refresh_entity_counts(connection)
+            orphan_entities_deleted = self._delete_orphan_entities(connection)
+
+        return KnowledgeDeleteResult(
+            deleted=True,
+            path=path,
+            chunks_deleted=chunks_deleted,
+            relations_deleted=relations_deleted,
+            summaries_deleted=summaries_deleted,
+            orphan_entities_deleted=orphan_entities_deleted,
+            message="已删除知识库资料并清理索引。",
+        )
 
     def search(
         self,
@@ -1357,6 +1442,24 @@ class KnowledgeStore:
                 )
             """
         )
+
+    def _delete_orphan_entities(self, connection: sqlite3.Connection) -> int:
+        rows = connection.execute(
+            """
+            SELECT id
+            FROM entities
+            WHERE chunk_count = 0 AND document_count = 0
+            """
+        ).fetchall()
+        entity_ids = [int(row["id"]) for row in rows]
+        if not entity_ids:
+            return 0
+
+        for entity_id in entity_ids:
+            connection.execute("DELETE FROM entity_embeddings WHERE entity_id = ?", (entity_id,))
+            connection.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+
+        return len(entity_ids)
 
     def _normalize_entity(self, name: str) -> str:
         return re.sub(r"\s+", "", name.strip().lower())

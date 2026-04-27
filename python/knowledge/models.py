@@ -43,6 +43,17 @@ class KnowledgeUploadResult:
 
 
 @dataclass(slots=True)
+class KnowledgeDeleteResult:
+    deleted: bool
+    path: str
+    chunks_deleted: int
+    relations_deleted: int
+    summaries_deleted: int
+    orphan_entities_deleted: int
+    message: str
+
+
+@dataclass(slots=True)
 class KnowledgeDocument:
     path: str
     title: str

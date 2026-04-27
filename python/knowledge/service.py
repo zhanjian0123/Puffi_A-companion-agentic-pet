@@ -13,6 +13,7 @@ from knowledge.embeddings import EmbeddingClient, EmbeddingConfig
 from knowledge.graph import GraphExtraction, RuleGraphExtractor
 from knowledge.llm_graph import LLMGraphConfig, LLMGraphExtractor
 from knowledge.models import (
+    KnowledgeDeleteResult,
     KnowledgeDocument,
     KnowledgeEntity,
     KnowledgeIndexingState,
@@ -210,6 +211,20 @@ class KnowledgeService:
             raise ValueError(f"不支持的文件类型：{suffix or '(无扩展名)'}。允许类型：{allowed}")
 
         return await asyncio.to_thread(self._upload_document_sync, filename, content)
+
+    async def delete_document(self, path: str) -> KnowledgeDeleteResult:
+        if not self._enabled:
+            return KnowledgeDeleteResult(
+                deleted=False,
+                path=path,
+                chunks_deleted=0,
+                relations_deleted=0,
+                summaries_deleted=0,
+                orphan_entities_deleted=0,
+                message="知识库未启用。",
+            )
+
+        return await asyncio.to_thread(self._delete_document_sync, path)
 
     async def query(
         self,
@@ -414,6 +429,55 @@ class KnowledgeService:
             messages=import_result.messages,
         )
 
+    def _delete_document_sync(self, path: str) -> KnowledgeDeleteResult:
+        try:
+            target = self._resolve_document_file(path)
+        except ValueError as error:
+            return KnowledgeDeleteResult(
+                deleted=False,
+                path=path,
+                chunks_deleted=0,
+                relations_deleted=0,
+                summaries_deleted=0,
+                orphan_entities_deleted=0,
+                message=str(error),
+            )
+
+        relative_path = str(target.relative_to(self._document_dir))
+        try:
+            target.unlink()
+        except OSError as error:
+            return KnowledgeDeleteResult(
+                deleted=False,
+                path=relative_path,
+                chunks_deleted=0,
+                relations_deleted=0,
+                summaries_deleted=0,
+                orphan_entities_deleted=0,
+                message=f"删除文件失败：{error}",
+            )
+
+        result = self._store.delete_document(relative_path)
+        if not result.deleted:
+            return KnowledgeDeleteResult(
+                deleted=True,
+                path=relative_path,
+                chunks_deleted=0,
+                relations_deleted=0,
+                summaries_deleted=0,
+                orphan_entities_deleted=0,
+                message="已删除知识库文件，但索引中没有找到该文档。",
+            )
+
+        print(
+            "[Knowledge] delete_document "
+            f"path={relative_path} chunks={result.chunks_deleted} "
+            f"relations={result.relations_deleted} summaries={result.summaries_deleted} "
+            f"orphan_entities={result.orphan_entities_deleted}",
+            flush=True,
+        )
+        return result
+
     async def _ensure_embeddings(self) -> None:
         if not self._embedding_client.is_available:
             return
@@ -558,6 +622,30 @@ class KnowledgeService:
             for file_path in target.rglob("*")
             if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_SUFFIXES
         )
+
+    def _resolve_document_file(self, path: str) -> Path:
+        cleaned = path.strip()
+        if not cleaned:
+            raise ValueError("删除失败：路径不能为空。")
+
+        requested = Path(cleaned).expanduser()
+        if requested.is_absolute():
+            raise ValueError("删除失败：请提供知识库文档目录内的相对路径。")
+
+        target = (self._document_dir / requested).resolve()
+        try:
+            target.relative_to(self._document_dir)
+        except ValueError as error:
+            raise ValueError("删除失败：路径不能超出知识库文档目录。") from error
+
+        if target.suffix.lower() not in SUPPORTED_SUFFIXES:
+            raise ValueError("删除失败：只允许删除 .md 或 .txt 知识库文档。")
+        if not target.exists():
+            raise ValueError(f"删除失败：知识库文件不存在：{cleaned}")
+        if not target.is_file():
+            raise ValueError("删除失败：只能删除具体文件，不能删除目录。")
+
+        return target
 
     def _relative_document_path(self, file_path: Path) -> str:
         try:

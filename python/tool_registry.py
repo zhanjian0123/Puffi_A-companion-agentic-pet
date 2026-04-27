@@ -9,10 +9,12 @@ from agents import Tool
 from tools.layer1.get_current_date import get_current_date
 from tools.layer1.get_current_time import get_current_time
 from tools.layer1.knowledge_search import knowledge_search
+from tools.layer1.list_knowledge_documents import list_knowledge_documents
 from tools.layer1.list_todos import list_todos
 from tools.layer2.add_todo import add_todo
 from tools.layer2.complete_todo import complete_todo
 from tools.layer2.create_or_update_skill import create_or_update_skill
+from tools.layer2.delete_knowledge_document import delete_knowledge_document
 from tools.layer2.remove_todo import remove_todo
 from tools.layer2.write_knowledge_note import write_knowledge_note
 
@@ -22,6 +24,7 @@ SAFE_READ_ONLY_TOOLS: list[Tool] = [
     get_current_date,
     list_todos,
     knowledge_search,
+    list_knowledge_documents,
 ]
 
 CONTROLLED_WRITE_TOOLS: list[Tool] = [
@@ -30,6 +33,7 @@ CONTROLLED_WRITE_TOOLS: list[Tool] = [
     remove_todo,
     create_or_update_skill,
     write_knowledge_note,
+    delete_knowledge_document,
 ]
 
 
