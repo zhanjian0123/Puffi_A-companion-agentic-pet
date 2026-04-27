@@ -1,7 +1,8 @@
 import json
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from starlette.datastructures import UploadFile
 
 from config import settings
 from knowledge import get_knowledge_service
@@ -22,6 +23,7 @@ from schemas import (
     KnowledgeRelationsResponse,
     KnowledgeSource,
     KnowledgeStatusResponse,
+    KnowledgeUploadResponse,
 )
 from service import AgentService
 
@@ -109,6 +111,34 @@ async def knowledge_import(request: KnowledgeImportRequest) -> KnowledgeImportRe
         skipped=result.skipped,
         failed=result.failed,
         messages=result.messages,
+    )
+
+
+@app.post("/knowledge/upload", response_model=KnowledgeUploadResponse)
+async def knowledge_upload(request: Request) -> KnowledgeUploadResponse:
+    filename = "document"
+    try:
+        form = await request.form()
+        file = form.get("file")
+        if not isinstance(file, UploadFile):
+            raise ValueError("上传请求缺少 file 字段。")
+
+        filename = file.filename or "document"
+        content = await file.read()
+        result = await knowledge_service.upload_document(
+            filename=filename,
+            content=content,
+        )
+    except Exception as error:
+        print(f"[Knowledge] upload error filename={filename} error={error}", flush=True)
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    return KnowledgeUploadResponse(
+        message="我记得这个文件了，它已经存在我的知识库里。",
+        filename=result.filename,
+        imported=result.imported,
+        skipped=result.skipped,
+        failed=result.failed,
     )
 
 

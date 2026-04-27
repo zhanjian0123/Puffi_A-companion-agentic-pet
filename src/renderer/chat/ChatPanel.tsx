@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { PANEL_VISIBLE_MESSAGE_COUNT } from '../../shared/chatConfig';
 import { MarkdownMessage } from './MarkdownMessage';
 
@@ -16,11 +16,25 @@ export interface ChatPanelProps {
   onChange: (value: string) => void;
   onClose: () => void;
   onSend: () => void;
+  onUploadFile: (file: File) => void;
+  uploadPhase: 'uploading' | 'processing' | null;
+  uploadProgress: number | null;
 }
 
-export function ChatPanel({ input, isLoading, messages, onChange, onClose, onSend }: ChatPanelProps) {
+export function ChatPanel({
+  input,
+  isLoading,
+  messages,
+  onChange,
+  onClose,
+  onSend,
+  onUploadFile,
+  uploadPhase,
+  uploadProgress,
+}: ChatPanelProps) {
   const visibleMessages = messages.slice(-PANEL_VISIBLE_MESSAGE_COUNT);
   const messageViewportRef = useRef<HTMLDivElement | null>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
 
   useEffect(() => {
     const viewport = messageViewportRef.current;
@@ -38,8 +52,43 @@ export function ChatPanel({ input, isLoading, messages, onChange, onClose, onSen
     }
   };
 
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragActive(false);
+
+    const file = event.dataTransfer.files.item(0);
+    if (file) {
+      onUploadFile(file);
+    }
+  };
+
+  const progress = uploadProgress ?? 0;
+
   return (
-    <>
+    <div
+      className={`chat-drop-surface ${isDragActive ? 'drag-active' : ''}`}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {uploadPhase && (
+        <div className={`upload-progress ${uploadPhase}`} aria-hidden="true">
+          <div className="upload-progress-bar" style={{ width: `${Math.max(0, Math.min(progress, 100))}%` }} />
+        </div>
+      )}
       <div className="chat-header">
         <div className="chat-title">AI Pet</div>
         <button className="panel-close" onClick={onClose} type="button" aria-label="关闭悬浮窗">
@@ -75,6 +124,6 @@ export function ChatPanel({ input, isLoading, messages, onChange, onClose, onSen
           发送
         </button>
       </div>
-    </>
+    </div>
   );
 }

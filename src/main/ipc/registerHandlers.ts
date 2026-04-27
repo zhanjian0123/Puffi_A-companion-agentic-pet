@@ -29,6 +29,11 @@ interface ChatPayload {
   mode?: string;
 }
 
+interface KnowledgeUploadPayload {
+  filePath: string;
+  requestId?: string;
+}
+
 export function registerIpcHandlers(agentClient: PythonAgentClient, windows: WindowController): void {
   const dragSessions = new Map<number, DragSession>();
 
@@ -77,6 +82,46 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     })();
 
     return { requestId };
+  });
+
+  ipcMain.handle('knowledge:upload-file', async (event, payload: KnowledgeUploadPayload) => {
+    const requestId = payload.requestId || randomUUID();
+    const sender = event.sender;
+
+    try {
+      const result = await agentClient.uploadKnowledgeFile(payload.filePath, (progress) => {
+        if (!sender.isDestroyed()) {
+          sender.send('knowledge:upload-progress', {
+            requestId,
+            phase: progress >= 100 ? 'processing' : 'uploading',
+            progress,
+          });
+        }
+      });
+
+      if (!sender.isDestroyed()) {
+        sender.send('knowledge:upload-progress', {
+          requestId,
+          phase: 'done',
+          progress: 100,
+          message: result.message,
+        });
+      }
+
+      return { message: result.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '知识库文件上传失败。';
+      console.error('[Knowledge] upload ipc error:', message);
+      if (!sender.isDestroyed()) {
+        sender.send('knowledge:upload-progress', {
+          requestId,
+          phase: 'error',
+          progress: 100,
+          message,
+        });
+      }
+      throw error;
+    }
   });
 
   ipcMain.handle('window:set-panel-open', async (_event, isOpen: boolean) => {

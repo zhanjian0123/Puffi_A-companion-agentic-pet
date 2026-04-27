@@ -53,6 +53,14 @@ def _default_knowledge_dir() -> str:
     return str((project_root / "knowledge").resolve())
 
 
+def _default_knowledge_upload_dir() -> str:
+    return str((Path(_optional_env("AI_PET_KB_DIR") or _default_knowledge_dir()) / "uploads").resolve())
+
+
+def _default_knowledge_converted_dir() -> str:
+    return str((Path(_optional_env("AI_PET_KB_DOCUMENT_DIR") or Path(_optional_env("AI_PET_KB_DIR") or _default_knowledge_dir()) / "documents") / "uploads").resolve())
+
+
 @dataclass(slots=True)
 class Settings:
     host: str = os.getenv("AI_PET_AGENT_HOST", "127.0.0.1")
@@ -105,6 +113,14 @@ class Settings:
     knowledge_graph_max_relations_per_chunk: int = int(os.getenv("AI_PET_KB_GRAPH_MAX_RELATIONS_PER_CHUNK", "8"))
     knowledge_graph_weight: float = float(os.getenv("AI_PET_KB_GRAPH_WEIGHT", "0.20"))
     knowledge_graph_context_limit: int = int(os.getenv("AI_PET_KB_GRAPH_CONTEXT_LIMIT", "2000"))
+    knowledge_upload_enabled: bool = os.getenv("AI_PET_KB_UPLOAD_ENABLED", "true").lower() == "true"
+    knowledge_upload_dir: str = _optional_env("AI_PET_KB_UPLOAD_DIR") or _default_knowledge_upload_dir()
+    knowledge_converted_dir: str = _optional_env("AI_PET_KB_CONVERTED_DIR") or _default_knowledge_converted_dir()
+    knowledge_upload_max_mb: int = int(os.getenv("AI_PET_KB_UPLOAD_MAX_MB", "25"))
+    knowledge_upload_allowed_extensions: str = os.getenv(
+        "AI_PET_KB_UPLOAD_ALLOWED_EXTENSIONS",
+        ".md,.txt,.pdf,.docx,.pptx,.xlsx,.html,.htm,.csv,.json",
+    )
 
 
 settings = Settings()

@@ -168,6 +168,51 @@ body {
   padding: 10px 14px 14px;
 }
 
+.chat-drop-surface {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.chat-drop-surface.drag-active::after {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  pointer-events: none;
+  border: 1px dashed rgba(74, 158, 255, 0.38);
+  border-radius: 22px;
+}
+
+.upload-progress {
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 20px;
+  z-index: 5;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(193, 208, 229, 0.5);
+}
+
+.upload-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #65c3ff 0%, #338aff 100%);
+  transition: width 120ms ease;
+}
+
+.upload-progress.processing .upload-progress-bar {
+  animation: upload-processing 900ms ease-in-out infinite;
+}
+
+@keyframes upload-processing {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
 .chat-header {
   display: flex;
   align-items: center;

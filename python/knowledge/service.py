@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import hashlib
 from pathlib import Path
 import re
 from time import perf_counter
 
 from config import settings
+from knowledge.converter import convert_to_markdown
 from knowledge.embeddings import EmbeddingClient, EmbeddingConfig
 from knowledge.graph import RuleGraphExtractor
 from knowledge.models import (
@@ -16,6 +18,7 @@ from knowledge.models import (
     KnowledgeRelation,
     KnowledgeSearchResult,
     KnowledgeStatus,
+    KnowledgeUploadResult,
 )
 from knowledge.store import KnowledgeStore
 
@@ -41,9 +44,19 @@ class KnowledgeService:
         graph_max_relations_per_chunk: int,
         graph_weight: float,
         graph_context_limit: int,
+        upload_enabled: bool,
+        upload_dir: str,
+        converted_dir: str,
+        upload_max_mb: int,
+        upload_allowed_extensions: str,
     ) -> None:
         self._enabled = enabled
         self._document_dir = Path(document_dir).expanduser().resolve()
+        self._upload_enabled = upload_enabled
+        self._upload_dir = Path(upload_dir).expanduser().resolve()
+        self._converted_dir = Path(converted_dir).expanduser().resolve()
+        self._upload_max_bytes = max(upload_max_mb, 1) * 1024 * 1024
+        self._upload_allowed_extensions = self._parse_extensions(upload_allowed_extensions)
         self._chunk_max_chars = max(chunk_max_chars, 300)
         self._top_k = max(top_k, 1)
         self._max_context_chars = max(max_context_chars, 1000)
@@ -70,6 +83,26 @@ class KnowledgeService:
         if result.imported and self._embedding_client.is_available:
             await self._ensure_embeddings()
         return result
+
+    async def upload_document(self, *, filename: str, content: bytes) -> KnowledgeUploadResult:
+        if not self._enabled:
+            raise ValueError("知识库未启用。")
+        if not self._upload_enabled:
+            raise ValueError("知识库上传未启用。")
+        if not filename:
+            raise ValueError("上传文件缺少文件名。")
+        if not content:
+            raise ValueError("上传文件为空。")
+        if len(content) > self._upload_max_bytes:
+            max_mb = self._upload_max_bytes // (1024 * 1024)
+            raise ValueError(f"上传文件超过大小限制：{max_mb}MB。")
+
+        suffix = Path(filename).suffix.lower()
+        if suffix not in self._upload_allowed_extensions:
+            allowed = ", ".join(sorted(self._upload_allowed_extensions))
+            raise ValueError(f"不支持的文件类型：{suffix or '(无扩展名)'}。允许类型：{allowed}")
+
+        return await asyncio.to_thread(self._upload_document_sync, filename, content)
 
     async def query(self, query: str, *, top_k: int | None = None) -> list[KnowledgeSearchResult]:
         if not self._enabled:
@@ -195,6 +228,61 @@ class KnowledgeService:
                 print(f"[Knowledge] import error path={file_path} error={error}", flush=True)
 
         return KnowledgeImportResult(imported, skipped, failed, messages)
+
+    def _upload_document_sync(self, filename: str, content: bytes) -> KnowledgeUploadResult:
+        started_at = perf_counter()
+        digest = hashlib.sha256(content).hexdigest()
+        hash_suffix = digest[:8]
+        source_filename = self._hashed_filename(filename, hash_suffix)
+        markdown_filename = f"{Path(source_filename).stem}.md"
+        source_path = self._upload_dir / source_filename
+        markdown_path = self._converted_dir / markdown_filename
+
+        print(
+            f"[Knowledge] upload start filename={filename} size={len(content)} hash={hash_suffix}",
+            flush=True,
+        )
+
+        self._upload_dir.mkdir(parents=True, exist_ok=True)
+        self._converted_dir.mkdir(parents=True, exist_ok=True)
+
+        source_path.write_bytes(content)
+        print(f"[Knowledge] upload saved source={source_path}", flush=True)
+
+        print(f"[Knowledge] convert start source={source_path}", flush=True)
+        markdown = convert_to_markdown(source_path).strip()
+        if not markdown:
+            raise ValueError("转换后的 Markdown 内容为空。")
+
+        markdown_text = self._format_uploaded_markdown(
+            source_filename=source_filename,
+            original_filename=filename,
+            markdown=markdown,
+        )
+        markdown_path.write_text(markdown_text, encoding="utf-8")
+        print(
+            f"[Knowledge] convert success markdown={markdown_path} chars={len(markdown_text)}",
+            flush=True,
+        )
+
+        import_result = self._import_documents_sync(str(markdown_path))
+        elapsed_ms = (perf_counter() - started_at) * 1000
+        print(
+            "[Knowledge] upload_import "
+            f"imported={import_result.imported} skipped={import_result.skipped} "
+            f"failed={import_result.failed} elapsed={elapsed_ms:.1f}ms",
+            flush=True,
+        )
+
+        return KnowledgeUploadResult(
+            filename=filename,
+            source_path=str(source_path),
+            markdown_path=str(markdown_path),
+            imported=import_result.imported,
+            skipped=import_result.skipped,
+            failed=import_result.failed,
+            messages=import_result.messages,
+        )
 
     async def _ensure_embeddings(self) -> None:
         if not self._embedding_client.is_available:
@@ -374,6 +462,35 @@ class KnowledgeService:
                 break
         return deduped
 
+    def _parse_extensions(self, value: str) -> set[str]:
+        extensions = set()
+        for item in value.split(","):
+            extension = item.strip().lower()
+            if not extension:
+                continue
+            extensions.add(extension if extension.startswith(".") else f".{extension}")
+        return extensions or {".md", ".txt"}
+
+    def _hashed_filename(self, filename: str, hash_suffix: str) -> str:
+        path = Path(filename)
+        suffix = path.suffix.lower()
+        stem = path.stem or "document"
+        safe_stem = re.sub(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+", "-", stem).strip(".-")
+        if not safe_stem:
+            safe_stem = "document"
+        return f"{safe_stem}-{hash_suffix}{suffix}"
+
+    def _format_uploaded_markdown(self, *, source_filename: str, original_filename: str, markdown: str) -> str:
+        uploaded_at = datetime.now().isoformat(timespec="seconds")
+        return (
+            "---\n"
+            f"source_file: {source_filename}\n"
+            f"original_file: {original_filename}\n"
+            f"uploaded_at: {uploaded_at}\n"
+            "---\n\n"
+            f"{markdown}\n"
+        )
+
 
 _knowledge_service: KnowledgeService | None = None
 
@@ -404,5 +521,10 @@ def get_knowledge_service() -> KnowledgeService:
             graph_max_relations_per_chunk=settings.knowledge_graph_max_relations_per_chunk,
             graph_weight=settings.knowledge_graph_weight,
             graph_context_limit=settings.knowledge_graph_context_limit,
+            upload_enabled=settings.knowledge_upload_enabled,
+            upload_dir=settings.knowledge_upload_dir,
+            converted_dir=settings.knowledge_converted_dir,
+            upload_max_mb=settings.knowledge_upload_max_mb,
+            upload_allowed_extensions=settings.knowledge_upload_allowed_extensions,
         )
     return _knowledge_service

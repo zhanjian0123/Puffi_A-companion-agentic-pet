@@ -12,6 +12,17 @@ class KnowledgeImportResult:
 
 
 @dataclass(slots=True)
+class KnowledgeUploadResult:
+    filename: str
+    source_path: str
+    markdown_path: str
+    imported: int
+    skipped: int
+    failed: int
+    messages: list[str]
+
+
+@dataclass(slots=True)
 class KnowledgeDocument:
     path: str
     title: str

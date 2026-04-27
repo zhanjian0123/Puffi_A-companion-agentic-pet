@@ -50,6 +50,14 @@ class KnowledgeImportResponse(BaseModel):
     messages: list[str]
 
 
+class KnowledgeUploadResponse(BaseModel):
+    message: str
+    filename: str
+    imported: int
+    skipped: int
+    failed: int
+
+
 class KnowledgeQueryRequest(BaseModel):
     query: str = Field(min_length=1)
     top_k: int | None = Field(default=None, ge=1, le=20)

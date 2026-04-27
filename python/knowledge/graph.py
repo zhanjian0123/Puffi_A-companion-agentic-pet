@@ -26,6 +26,18 @@ class GraphExtraction:
 
 class RuleGraphExtractor:
     _relation_words = ("调用", "读取", "写入", "使用", "依赖", "存储到", "连接", "管理", "检索", "返回", "属于", "是")
+    _question_markers = (
+        "？",
+        "?",
+        "是否",
+        "是不是",
+        "能否",
+        "可否",
+        "需不需要",
+        "要不要",
+        "是否正确",
+        "是否违反",
+    )
 
     def extract_chunk(self, content: str, *, max_relations: int) -> GraphExtraction:
         entities = self.extract_entities(content)
@@ -81,20 +93,28 @@ class RuleGraphExtractor:
         max_relations: int,
     ) -> list[ExtractedRelation]:
         relations: list[ExtractedRelation] = []
-        for match in re.finditer(r"([\u4e00-\u9fffA-Za-z0-9_.-]{2,20})是([^，。；;\n]{1,24})", text):
-            source = match.group(1).strip()
-            target = match.group(2).strip(" 的")
-            if source and target and self.normalize(source) != self.normalize(target):
-                relations.append(
-                    ExtractedRelation(
-                        source=source,
-                        relation="是",
-                        target=target,
-                        confidence=0.7,
+        factual_segments = self._factual_segments(text)
+
+        for segment in factual_segments:
+            for match in re.finditer(r"([\u4e00-\u9fffA-Za-z0-9_.-]{2,20})(?<!不)是(?!否)([^，。；;\n]{1,24})", segment):
+                source = match.group(1).strip()
+                target = match.group(2).strip(" 的")
+                if (
+                    source
+                    and target
+                    and self.normalize(source) != self.normalize(target)
+                    and self._is_relation_candidate(source, target)
+                ):
+                    relations.append(
+                        ExtractedRelation(
+                            source=source,
+                            relation="是",
+                            target=target,
+                            confidence=0.7,
+                        )
                     )
-                )
-                if len(relations) >= max_relations:
-                    return relations
+                    if len(relations) >= max_relations:
+                        return relations
 
         names = [entity.name for entity in entities if len(entity.name) >= 2]
         if len(names) < 2:
@@ -102,25 +122,31 @@ class RuleGraphExtractor:
 
         escaped_names = sorted((re.escape(name) for name in names), key=len, reverse=True)
         name_pattern = "|".join(escaped_names[:80])
-        relation_pattern = "|".join(self._relation_words)
+        relation_pattern = "|".join(
+            re.escape(word) if word != "是" else r"(?<!不)是(?!否)"
+            for word in self._relation_words
+        )
 
-        for match in re.finditer(
-            rf"({name_pattern}).{{0,24}}?({relation_pattern}).{{0,24}}?({name_pattern})",
-            text,
-        ):
-            source, relation, target = match.group(1), match.group(2), match.group(3)
-            if self.normalize(source) == self.normalize(target):
-                continue
-            relations.append(
-                ExtractedRelation(
-                    source=source,
-                    relation=relation,
-                    target=target,
-                    confidence=0.75,
+        for segment in factual_segments:
+            for match in re.finditer(
+                rf"({name_pattern}).{{0,24}}?({relation_pattern}).{{0,24}}?({name_pattern})",
+                segment,
+            ):
+                source, relation, target = match.group(1), match.group(2), match.group(3)
+                if self.normalize(source) == self.normalize(target):
+                    continue
+                if not self._is_relation_candidate(source, target):
+                    continue
+                relations.append(
+                    ExtractedRelation(
+                        source=source,
+                        relation=relation,
+                        target=target,
+                        confidence=0.75,
+                    )
                 )
-            )
-            if len(relations) >= max_relations:
-                return relations
+                if len(relations) >= max_relations:
+                    return relations
 
         return relations
 
@@ -133,5 +159,25 @@ class RuleGraphExtractor:
         if name.isdigit():
             return False
         if name in {"这个", "那个", "什么", "怎么", "为什么", "一般来说", "本地知识库"}:
+            return False
+        return True
+
+    def _factual_segments(self, text: str) -> list[str]:
+        segments = re.split(r"[\n。；;！!]+", text)
+        return [
+            segment.strip()
+            for segment in segments
+            if segment.strip() and not self._is_question_like(segment)
+        ]
+
+    def _is_question_like(self, text: str) -> bool:
+        return any(marker in text for marker in self._question_markers)
+
+    def _is_relation_candidate(self, source: str, target: str) -> bool:
+        if self._is_question_like(source) or self._is_question_like(target):
+            return False
+        if target.startswith(("否", "不", "没", "未")):
+            return False
+        if source.endswith(("是否", "能否", "可否")):
             return False
         return True

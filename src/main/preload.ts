@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ChatRequestPayload, ChatStreamEvent } from '../shared/types';
+import type { ChatRequestPayload, ChatStreamEvent, KnowledgeUploadProgressEvent } from '../shared/types';
 
 try {
   ipcRenderer.send('bridge:ready');
@@ -18,6 +18,24 @@ try {
 
       return () => {
         ipcRenderer.removeListener('chat:stream-event', listener);
+      };
+    },
+    uploadKnowledgeFile: (file: unknown, requestId: string) => {
+      const filePath = (file as { path?: string }).path;
+      if (!filePath) {
+        throw new Error('无法读取拖入文件的本地路径。');
+      }
+      return ipcRenderer.invoke('knowledge:upload-file', { filePath, requestId });
+    },
+    onKnowledgeUploadProgress: (callback: (event: KnowledgeUploadProgressEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: KnowledgeUploadProgressEvent) => {
+        callback(payload);
+      };
+
+      ipcRenderer.on('knowledge:upload-progress', listener);
+
+      return () => {
+        ipcRenderer.removeListener('knowledge:upload-progress', listener);
       };
     },
     setPanelOpen: (isOpen: boolean) => ipcRenderer.invoke('window:set-panel-open', isOpen),
