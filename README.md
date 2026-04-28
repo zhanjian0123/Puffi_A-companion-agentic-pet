@@ -9,7 +9,7 @@ AI Pet 是一个常驻桌面的 AI 宠物助手。它不是一个传统聊天窗
 ### 正常
 
 <p align="center">
-  <img src="png/正常.png" alt="AI Pet 封面" width="300" />
+  <img src="png/正常.png" alt="AI Pet 封面" width="200" />
 </p>
 
 ### 状态展示
