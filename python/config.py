@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 try:
     from dotenv import load_dotenv
@@ -51,6 +53,48 @@ def _bool_env(name: str, default: bool) -> bool:
     return value.lower() == "true"
 
 
+def _model_api_env() -> str:
+    value = os.getenv("AI_PET_MODEL_API", "responses")
+    normalized = value.split("#", 1)[0].strip().lower().replace("-", "_")
+    if normalized in {"responses", "chat_completions"}:
+        return normalized
+
+    print(
+        f"[Config] unsupported AI_PET_MODEL_API={value!r}, falling back to responses",
+        flush=True,
+    )
+    return "responses"
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _default_mcp_servers_path() -> str:
+    return str((_project_root() / "mcp" / "servers.json").resolve())
+
+
+def _json_list_file(path: str) -> list[dict[str, Any]]:
+    config_path = Path(path).expanduser()
+    if not config_path.is_absolute():
+        config_path = (_project_root() / config_path).resolve()
+
+    if not config_path.exists():
+        return []
+
+    parsed = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(parsed, list):
+        raise ValueError(f"{config_path} must be a JSON array.")
+
+    items: list[dict[str, Any]] = []
+    for index, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            raise ValueError(f"{config_path}[{index}] must be a JSON object.")
+        items.append(item)
+
+    return items
+
+
 def _default_session_db_path() -> str:
     return str(Path.home() / ".ai-pet" / "agent_sessions.sqlite3")
 
@@ -60,13 +104,11 @@ def _default_tool_data_dir() -> str:
 
 
 def _default_memory_dir() -> str:
-    project_root = Path(__file__).resolve().parent.parent
-    return str((project_root / "data" / "memory").resolve())
+    return str((_project_root() / "data" / "memory").resolve())
 
 
 def _default_knowledge_dir() -> str:
-    project_root = Path(__file__).resolve().parent.parent
-    return str((project_root / "knowledge").resolve())
+    return str((_project_root() / "knowledge").resolve())
 
 
 def _default_knowledge_upload_dir() -> str:
@@ -83,20 +125,14 @@ class Settings:
     port: int = int(os.getenv("AI_PET_AGENT_PORT", "8787"))
     openai_api_key: str | None = _optional_env("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "qwen3.6-plus")
-    model_api: str = os.getenv("AI_PET_MODEL_API", "responses").lower()
+    model_api: str = _model_api_env()
     openai_base_url: str | None = _optional_env("OPENAI_BASE_URL")
     openai_websocket_base_url: str | None = _optional_env("OPENAI_WEBSOCKET_BASE_URL")
     mcp_enabled: bool = _bool_env("AI_PET_MCP_ENABLED", True)
-    mcp_search_enabled: bool = _bool_env("AI_PET_MCP_SEARCH_ENABLED", False)
-    mcp_search_name: str = os.getenv("AI_PET_MCP_SEARCH_NAME", "websearch")
-    mcp_search_url: str | None = _optional_env("AI_PET_MCP_SEARCH_URL")
-    mcp_search_api_key: str | None = _optional_env("AI_PET_MCP_SEARCH_API_KEY") or _optional_env(
-        "DASHSCOPE_API_KEY"
-    )
-    mcp_search_timeout: float = _optional_float_env("AI_PET_MCP_SEARCH_TIMEOUT", 15.0)
-    mcp_search_sse_read_timeout: float = _optional_float_env("AI_PET_MCP_SEARCH_SSE_READ_TIMEOUT", 60.0)
-    mcp_search_cache_tools: bool = _bool_env("AI_PET_MCP_SEARCH_CACHE_TOOLS", True)
-    mcp_search_max_retry_attempts: int = int(os.getenv("AI_PET_MCP_SEARCH_MAX_RETRY_ATTEMPTS", "1"))
+    mcp_servers_path: str = _default_mcp_servers_path()
+    mcp_servers: list[dict[str, Any]] | None = None
+    mcp_connect_timeout: float = _optional_float_env("AI_PET_MCP_CONNECT_TIMEOUT", 15.0)
+    mcp_cleanup_timeout: float = _optional_float_env("AI_PET_MCP_CLEANUP_TIMEOUT", 15.0)
     session_id: str = os.getenv("AI_PET_SESSION_ID", "desktop-active")
     session_db_path: str = os.getenv("AI_PET_SESSION_DB_PATH", _default_session_db_path())
     session_context_limit: int | None = _optional_int_env("AI_PET_SESSION_CONTEXT_LIMIT")
@@ -171,6 +207,5 @@ class Settings:
         "AI_PET_KB_UPLOAD_ALLOWED_EXTENSIONS",
         ".md,.txt,.pdf,.docx,.pptx,.xlsx,.html,.htm,.csv,.json",
     )
-
-
 settings = Settings()
+settings.mcp_servers = _json_list_file(settings.mcp_servers_path)

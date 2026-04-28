@@ -95,8 +95,8 @@ class AgentService:
         self._mcp_manager = (
             MCPServerManager(
                 self._mcp_servers,
-                connect_timeout_seconds=settings.mcp_search_timeout,
-                cleanup_timeout_seconds=settings.mcp_search_timeout,
+                connect_timeout_seconds=settings.mcp_connect_timeout,
+                cleanup_timeout_seconds=settings.mcp_cleanup_timeout,
                 drop_failed_servers=True,
                 strict=False,
                 connect_in_parallel=True,

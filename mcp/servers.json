@@ -1,0 +1,13 @@
+[
+  {
+    "name": "AliyunBailianMCP_WebSearch",
+    "type": "streamable_http",
+    "enabled": true,
+    "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/mcp",
+    "api_key_env": "DASHSCOPE_API_KEY",
+    "timeout": 15,
+    "sse_read_timeout": 60,
+    "cache_tools": true,
+    "max_retry_attempts": 1
+  }
+]

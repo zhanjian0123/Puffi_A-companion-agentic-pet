@@ -51,10 +51,27 @@ npm run dev:python
 外部搜索 MCP 可选配置：
 
 - `AI_PET_MCP_ENABLED=true`
-- `AI_PET_MCP_SEARCH_ENABLED=true`
-- `AI_PET_MCP_SEARCH_NAME=websearch`
-- `AI_PET_MCP_SEARCH_URL`：百炼 MCP 外部调用里的 Streamable HTTP 地址
-- `AI_PET_MCP_SEARCH_API_KEY`：百炼 API Key；已配置 `DASHSCOPE_API_KEY` 时可省略
+- `mcp/servers.json`：MCP 服务列表，支持多个 Streamable HTTP MCP
+- `AI_PET_MCP_CONNECT_TIMEOUT`：MCP 连接超时，默认 `15`
+- `AI_PET_MCP_CLEANUP_TIMEOUT`：MCP 清理超时，默认 `15`
+
+`mcp/servers.json` 示例：
+
+```json
+[
+  {
+    "name": "AliyunBailianMCP_WebSearch",
+    "type": "streamable_http",
+    "enabled": true,
+    "url": "https://dashscope.aliyuncs.com/api/v1/mcps/YOUR_MCP_NAME/mcp",
+    "api_key_env": "DASHSCOPE_API_KEY",
+    "timeout": 15,
+    "sse_read_timeout": 60,
+    "cache_tools": true,
+    "max_retry_attempts": 1
+  }
+]
+```
 
 DeepSeek V4 Flash 示例：
 

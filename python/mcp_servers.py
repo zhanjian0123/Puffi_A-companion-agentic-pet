@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from inspect import isawaitable
+import os
+import re
 from time import perf_counter
 from typing import Any
 
@@ -14,45 +16,83 @@ def build_mcp_servers() -> list[MCPServer]:
         return []
 
     servers: list[MCPServer] = []
-
-    search_server = _build_search_mcp_server()
-    if search_server is not None:
-        servers.append(search_server)
+    for index, server_config in enumerate(settings.mcp_servers or []):
+        server = _build_streamable_http_server(server_config, index)
+        if server is not None:
+            servers.append(server)
 
     return servers
 
 
-def _build_search_mcp_server() -> MCPServer | None:
-    if not settings.mcp_search_enabled:
+def _build_streamable_http_server(config: dict[str, Any], index: int) -> MCPServer | None:
+    if config.get("enabled", True) is False:
         return None
 
-    if not settings.mcp_search_url:
-        print("[MCP] search disabled: AI_PET_MCP_SEARCH_URL is not configured", flush=True)
+    server_type = str(config.get("type", "streamable_http")).strip().lower()
+    if server_type not in {"streamable_http", "streamable-http"}:
+        print(f"[MCP] server[{index}] disabled: unsupported type={server_type}", flush=True)
         return None
 
-    if not settings.mcp_search_api_key:
-        print(
-            "[MCP] search disabled: AI_PET_MCP_SEARCH_API_KEY or DASHSCOPE_API_KEY is not configured",
-            flush=True,
-        )
+    name = str(config.get("name") or f"mcp-{index}").strip()
+    url = str(config.get("url") or "").strip()
+    if not url:
+        print(f"[MCP] server[{index}] disabled: url is not configured", flush=True)
         return None
 
-    print(f"[MCP] search configured name={settings.mcp_search_name}", flush=True)
+    headers = _resolve_headers(config)
+    timeout = float(config.get("timeout", 15.0))
+    sse_read_timeout = float(config.get("sse_read_timeout", 60.0))
+    cache_tools = bool(config.get("cache_tools", True))
+    max_retry_attempts = int(config.get("max_retry_attempts", 1))
+
+    print(f"[MCP] configured name={name} type={server_type}", flush=True)
     return _with_mcp_logs(
         MCPServerStreamableHttp(
             {
-                "url": settings.mcp_search_url,
-                "headers": {
-                    "Authorization": f"Bearer {settings.mcp_search_api_key}",
-                },
-                "timeout": settings.mcp_search_timeout,
-                "sse_read_timeout": settings.mcp_search_sse_read_timeout,
+                "url": url,
+                "headers": headers,
+                "timeout": timeout,
+                "sse_read_timeout": sse_read_timeout,
             },
-            cache_tools_list=settings.mcp_search_cache_tools,
-            name=settings.mcp_search_name,
-            max_retry_attempts=settings.mcp_search_max_retry_attempts,
+            cache_tools_list=cache_tools,
+            name=name,
+            max_retry_attempts=max_retry_attempts,
         )
     )
+
+
+def _resolve_headers(config: dict[str, Any]) -> dict[str, str]:
+    raw_headers = config.get("headers")
+    headers = {
+        str(key): _resolve_env_placeholders(str(value))
+        for key, value in raw_headers.items()
+    } if isinstance(raw_headers, dict) else {}
+
+    if "Authorization" not in headers:
+        api_key = _resolve_api_key(config)
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+    return headers
+
+
+def _resolve_api_key(config: dict[str, Any]) -> str | None:
+    api_key = config.get("api_key")
+    if isinstance(api_key, str) and api_key:
+        return _resolve_env_placeholders(api_key)
+
+    api_key_env = config.get("api_key_env")
+    if isinstance(api_key_env, str) and api_key_env:
+        return os.getenv(api_key_env)
+
+    return None
+
+
+def _resolve_env_placeholders(value: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        return os.getenv(match.group(1), "")
+
+    return re.sub(r"\$\{([A-Za-z0-9_]+)\}", replace, value)
 
 
 def _shorten(value: object, limit: int = 500) -> str:

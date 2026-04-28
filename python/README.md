@@ -27,17 +27,39 @@ cd python
 
 ## External Search MCP
 
-服务支持通过 Streamable HTTP MCP 接入外部搜索工具。以阿里云百炼 MCP 外部调用为例，在项目根目录 `.env` 中配置：
+服务支持通过 `mcp/servers.json` 接入多个 Streamable HTTP MCP。以阿里云百炼 MCP 外部调用为例：
 
-```bash
-AI_PET_MCP_ENABLED=true
-AI_PET_MCP_SEARCH_ENABLED=true
-AI_PET_MCP_SEARCH_NAME=websearch
-AI_PET_MCP_SEARCH_URL=https://dashscope.aliyuncs.com/api/v1/mcps/YOUR_MCP_NAME/mcp
-AI_PET_MCP_SEARCH_API_KEY=your_bailian_api_key
+```json
+[
+  {
+    "name": "AliyunBailianMCP_WebSearch",
+    "type": "streamable_http",
+    "enabled": true,
+    "url": "https://dashscope.aliyuncs.com/api/v1/mcps/YOUR_MCP_NAME/mcp",
+    "api_key_env": "DASHSCOPE_API_KEY",
+    "timeout": 15,
+    "sse_read_timeout": 60,
+    "cache_tools": true,
+    "max_retry_attempts": 1
+  }
+]
 ```
 
-如果已设置 `DASHSCOPE_API_KEY`，可以省略 `AI_PET_MCP_SEARCH_API_KEY`。具体 URL 和 MCP 名称以百炼控制台“外部调用”页面展示为准。
+也可以直接在 `headers` 里配置鉴权，并支持 `${ENV_NAME}` 环境变量占位：
+
+```json
+[
+  {
+    "name": "custom-mcp",
+    "url": "https://example.com/mcp",
+    "headers": {
+      "Authorization": "Bearer ${CUSTOM_MCP_API_KEY}"
+    }
+  }
+]
+```
+
+`.env` 只需要保留 `AI_PET_MCP_ENABLED=true` 和对应密钥变量。具体 URL 和 MCP 名称以百炼控制台“外部调用”页面展示为准。
 
 ## DeepSeek V4 Flash
 
