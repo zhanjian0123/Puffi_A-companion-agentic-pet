@@ -1,4 +1,4 @@
-import { app, BrowserWindow, type WebContents } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { createPanelWindow, createPetWindow, positionPanelWindow } from './app/createMainWindow';
 import { bootstrapApp } from './bootstrap';
 import { registerIpcHandlers } from './ipc/registerHandlers';
@@ -87,40 +87,15 @@ function openPanelWindow(): void {
   showPanel();
 }
 
-async function showReminder(reminder: ReminderDueItem): Promise<WebContents | null> {
+async function showReminder(reminder: ReminderDueItem): Promise<boolean> {
   void reminder;
   if (!petWindow || petWindow.isDestroyed()) {
-    return null;
+    return false;
   }
 
-  const nextPanelWindow = ensurePanelWindow();
-  if (!nextPanelWindow) {
-    return null;
-  }
-
-  return new Promise((resolve) => {
-    const sendWhenReady = () => {
-      if (!petWindow || petWindow.isDestroyed() || !panelWindow || panelWindow.isDestroyed()) {
-        resolve(null);
-        return;
-      }
-
-      positionPanelWindow(panelWindow, petWindow);
-      panelWindow.show();
-      panelWindow.focus();
-      const webContents = panelWindow.webContents;
-      setTimeout(() => {
-        resolve(webContents.isDestroyed() ? null : webContents);
-      }, 250);
-    };
-
-    if (nextPanelWindow.webContents.isLoadingMainFrame()) {
-      nextPanelWindow.webContents.once('did-finish-load', sendWhenReady);
-      return;
-    }
-
-    sendWhenReady();
-  });
+  petWindow.setAlwaysOnTop(true, 'screen-saver');
+  petWindow.showInactive();
+  return true;
 }
 
 app.whenReady().then(async () => {

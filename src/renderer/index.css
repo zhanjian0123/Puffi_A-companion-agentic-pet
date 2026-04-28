@@ -37,63 +37,134 @@ body {
 }
 
 .pet-container {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   padding-bottom: 26px;
   width: 100%;
   overflow: visible;
+  transition: transform 220ms ease, padding-bottom 220ms ease;
+}
+
+.pet-stage.has-reminder .pet-container {
+  z-index: 7;
+  transform: translateY(-28px);
 }
 
 .pet-reminder-pop {
   position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 166px;
-  min-height: 54px;
-  border: 1px solid rgba(29, 81, 103, 0.14);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 16px 28px rgba(26, 78, 98, 0.18);
+  left: 8px;
+  right: 8px;
+  bottom: 16px;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  animation: reminder-pop-in 240ms cubic-bezier(0.2, 0.9, 0.25, 1.1);
+  filter: drop-shadow(0 18px 24px var(--reminder-shadow));
+  --reminder-main: #55d6c9;
+  --reminder-main-soft: #dff8f5;
+  --reminder-main-pale: #f2fffd;
+  --reminder-main-ink: #18776f;
+  --reminder-alert: #ffc95a;
+  --reminder-alert-ink: #55320d;
+  --reminder-shadow: rgba(31, 67, 82, 0.2);
+}
+
+.pet-reminder-card {
+  position: relative;
+  width: 100%;
+  min-height: 98px;
+  border: 1px solid color-mix(in srgb, var(--reminder-main) 62%, white 38%);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 15% 24%, rgba(255, 255, 255, 0.98) 0 18px, transparent 19px),
+    linear-gradient(156deg, rgba(255, 255, 255, 0.98) 0%, var(--reminder-main-pale) 52%, var(--reminder-main-soft) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 0 0 3px color-mix(in srgb, var(--reminder-main) 14%, transparent),
+    0 10px 24px rgba(35, 93, 103, 0.12);
   color: #123248;
   cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  justify-content: center;
-  padding: 9px 12px 9px 42px;
-  text-align: left;
-  animation: reminder-pop-in 220ms ease-out;
-}
-
-.pet-reminder-pop::before {
-  content: '!';
-  position: absolute;
-  left: 13px;
-  top: 50%;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #ffcf5a;
-  color: #53310b;
   display: grid;
-  place-items: center;
-  font-size: 14px;
-  font-weight: 800;
-  transform: translateY(-50%);
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+  padding: 38px 32px 13px 12px;
+  text-align: left;
+  overflow: hidden;
 }
 
-.pet-reminder-pop::after {
+.pet-reminder-card:hover,
+.pet-reminder-card:focus-visible {
+  border-color: var(--reminder-main);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.pet-reminder-card::before {
   content: '';
   position: absolute;
-  left: 84px;
-  bottom: -8px;
-  width: 16px;
-  height: 16px;
-  background: rgba(255, 255, 255, 0.94);
-  border-right: 1px solid rgba(29, 81, 103, 0.12);
-  border-bottom: 1px solid rgba(29, 81, 103, 0.12);
-  transform: rotate(45deg);
+  left: -18px;
+  right: -18px;
+  bottom: -34px;
+  height: 52px;
+  border-radius: 50% 50% 0 0;
+  background:
+    radial-gradient(ellipse at 18% 10%, color-mix(in srgb, var(--reminder-main) 28%, transparent) 0 32px, transparent 33px),
+    radial-gradient(ellipse at 55% 16%, color-mix(in srgb, var(--reminder-main) 22%, transparent) 0 38px, transparent 39px),
+    radial-gradient(ellipse at 88% 8%, color-mix(in srgb, var(--reminder-main) 18%, transparent) 0 32px, transparent 33px);
+  pointer-events: none;
+}
+
+.pet-reminder-card::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -7px;
+  bottom: auto;
+  width: 14px;
+  height: 14px;
+  background: var(--reminder-main-pale);
+  border-right: 1px solid color-mix(in srgb, var(--reminder-main) 34%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--reminder-main) 34%, transparent);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.pet-reminder-icon {
+  position: relative;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #ffe083, var(--reminder-alert));
+  box-shadow: 0 8px 14px rgba(214, 134, 31, 0.22);
+  color: var(--reminder-alert-ink);
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  font-weight: 850;
+}
+
+.pet-reminder-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pet-reminder-kicker {
+  align-self: flex-start;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--reminder-main) 22%, white 78%);
+  color: var(--reminder-main-ink);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 5px 9px;
 }
 
 .pet-reminder-title {
@@ -101,14 +172,92 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 750;
+  color: #15314a;
+  font-size: 17px;
+  font-weight: 820;
+  line-height: 1.25;
 }
 
 .pet-reminder-time {
   display: block;
+  white-space: normal;
   color: #49687b;
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.pet-reminder-close {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 9;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(18, 50, 72, 0.05);
+  color: #4a6576;
+  cursor: pointer;
+  display: grid;
+  font-size: 18px;
+  line-height: 1;
+  place-items: center;
+}
+
+.pet-reminder-close:hover,
+.pet-reminder-close:focus-visible {
+  background: rgba(18, 50, 72, 0.12);
+  outline: none;
+}
+
+.pet-reminder-pop-mint {
+  --reminder-main: #55d6c9;
+  --reminder-main-soft: #dcf8f4;
+  --reminder-main-pale: #f3fffd;
+  --reminder-main-ink: #16766f;
+  --reminder-alert: #ffc95a;
+  --reminder-alert-ink: #55320d;
+  --reminder-shadow: rgba(31, 92, 89, 0.2);
+}
+
+.pet-reminder-pop-sky {
+  --reminder-main: #65b8ff;
+  --reminder-main-soft: #e0f1ff;
+  --reminder-main-pale: #f4fbff;
+  --reminder-main-ink: #2d6fbc;
+  --reminder-alert: #68b7ff;
+  --reminder-alert-ink: #123a66;
+  --reminder-shadow: rgba(37, 92, 145, 0.2);
+}
+
+.pet-reminder-pop-honey {
+  --reminder-main: #efc266;
+  --reminder-main-soft: #fbefd8;
+  --reminder-main-pale: #fffaf0;
+  --reminder-main-ink: #8a6324;
+  --reminder-alert: #ffc95a;
+  --reminder-alert-ink: #55320d;
+  --reminder-shadow: rgba(126, 88, 28, 0.2);
+}
+
+.pet-reminder-pop-rose {
+  --reminder-main: #ff99aa;
+  --reminder-main-soft: #ffe4e9;
+  --reminder-main-pale: #fff6f8;
+  --reminder-main-ink: #b94c63;
+  --reminder-alert: #ff7f91;
+  --reminder-alert-ink: #6d1f2d;
+  --reminder-shadow: rgba(148, 57, 76, 0.2);
+}
+
+.pet-reminder-pop-violet {
+  --reminder-main: #a99cff;
+  --reminder-main-soft: #eeeaff;
+  --reminder-main-pale: #faf8ff;
+  --reminder-main-ink: #6659c7;
+  --reminder-alert: #a99cff;
+  --reminder-alert-ink: #312b70;
+  --reminder-shadow: rgba(82, 69, 157, 0.2);
 }
 
 @keyframes reminder-pop-in {
@@ -582,8 +731,12 @@ body {
 }
 
 .pet.sleepy .blob-body {
-  transform: scaleX(1.18) scaleY(0.72) translateY(22px);
-  border-radius: 59% 41% 47% 53% / 70% 70% 30% 30%;
+  transform: scale(0.82) translateY(12px);
+  border-radius: 54% 46% 43% 57% / 60% 62% 38% 40%;
+  box-shadow:
+    inset -8px -12px 18px rgba(42, 117, 120, 0.12),
+    inset 7px 10px 14px rgba(255, 255, 255, 0.25),
+    0 12px 22px var(--blob-shadow);
 }
 
 .pet.sleepy .blob-effect.sleep {
@@ -592,15 +745,17 @@ body {
 }
 
 .pet.sleepy .blob-eye {
+  width: 15px;
   height: 3px;
-  margin-top: 6px;
-  border-radius: 8px;
+  margin-top: 7px;
+  border-radius: 999px;
   animation: none;
+  transform: none;
 }
 
 .pet.sleepy .blob-mouth {
-  width: 13px;
-  height: 7px;
+  width: 12px;
+  height: 5px;
 }
 
 @keyframes blob-think {

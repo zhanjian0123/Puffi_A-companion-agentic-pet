@@ -1,10 +1,10 @@
-import { BrowserWindow, type WebContents } from 'electron';
+import { BrowserWindow } from 'electron';
 import type { PythonAgentClient, ReminderDueItem } from '../python/PythonAgentClient';
 
 export interface ReminderSchedulerOptions {
   agentClient: PythonAgentClient;
   intervalMs?: number;
-  onReminderDue: (reminder: ReminderDueItem) => Promise<WebContents | null>;
+  onReminderDue: (reminder: ReminderDueItem) => Promise<boolean>;
 }
 
 export class ReminderScheduler {
@@ -45,8 +45,8 @@ export class ReminderScheduler {
     try {
       const result = await this.options.agentClient.dueReminders();
       for (const reminder of result.reminders) {
-        const webContents = await this.options.onReminderDue(reminder);
-        if (!webContents || webContents.isDestroyed()) {
+        const shouldNotify = await this.options.onReminderDue(reminder);
+        if (!shouldNotify) {
           continue;
         }
 

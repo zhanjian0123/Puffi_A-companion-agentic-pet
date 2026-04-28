@@ -9,12 +9,19 @@ import type { PetState, ReminderDueEvent } from '../shared/types';
 
 type PetEmotion = 'happy' | 'neutral' | 'sad';
 const DEFAULT_AGENT_MODE = 'chat';
+const REMINDER_THEMES = ['mint', 'sky', 'honey', 'rose', 'violet'] as const;
+type ReminderTheme = (typeof REMINDER_THEMES)[number];
+
+function pickReminderTheme(): ReminderTheme {
+  return REMINDER_THEMES[Math.floor(Math.random() * REMINDER_THEMES.length)];
+}
 
 export default function App() {
   const mode = new URLSearchParams(window.location.search).get('mode') === 'panel' ? 'panel' : 'pet';
   const [emotion, setEmotion] = useState<PetEmotion>('neutral');
   const [petMood, setPetMood] = useState<PetMood>('idle');
   const [reminderNotice, setReminderNotice] = useState<ReminderDueEvent | null>(null);
+  const [reminderTheme, setReminderTheme] = useState<ReminderTheme>('mint');
   const petMoodRef = useRef<PetMood>('idle');
   const moodTimerRef = useRef<number | null>(null);
   const reminderTimerRef = useRef<number | null>(null);
@@ -123,7 +130,7 @@ export default function App() {
       }
 
       if (petMoodRef.current === 'idle') {
-        schedulePetMood('sleepy', 60000);
+        schedulePetMood('sleepy', 10000);
       }
     };
 
@@ -144,19 +151,20 @@ export default function App() {
     }
 
     return api.onReminderDue((event) => {
+      if (mode !== 'pet') {
+        return;
+      }
+
       setHappy();
+      setReminderTheme(pickReminderTheme());
       setReminderNotice(event);
       clearReminderTimer();
       reminderTimerRef.current = window.setTimeout(() => {
         reminderTimerRef.current = null;
         setReminderNotice(null);
-      }, mode === 'pet' ? 12000 : 9000);
-
-      if (mode === 'panel') {
-        appendAssistantMessage(`提醒你：${event.title}\n\n时间：${event.remindAt}\nID：${event.id}`);
-      }
+      }, 12000);
     });
-  }, [appendAssistantMessage, clearReminderTimer, mode, setHappy]);
+  }, [clearReminderTimer, mode, setHappy]);
 
   const setPanelOpen = async (nextOpen: boolean) => {
     await requireElectronApi().setPanelOpen(nextOpen);
@@ -176,26 +184,6 @@ export default function App() {
     return (
       <div className="app panel-window">
         <div className="chat-popover">
-          {reminderNotice ? (
-            <div className="reminder-banner" role="status">
-              <div className="reminder-banner-icon">!</div>
-              <div className="reminder-banner-copy">
-                <div className="reminder-banner-title">{reminderNotice.title}</div>
-                <div className="reminder-banner-time">{reminderNotice.remindAt}</div>
-              </div>
-              <button
-                className="reminder-banner-close"
-                onClick={() => {
-                  setReminderNotice(null);
-                  clearReminderTimer();
-                }}
-                type="button"
-                aria-label="关闭提醒"
-              >
-                ×
-              </button>
-            </div>
-          ) : null}
           <ChatPanel
             input={input}
             isLoading={isLoading}
@@ -214,12 +202,29 @@ export default function App() {
 
   return (
     <div className="app pet-window">
-      <div className="pet-stage">
+      <div className={`pet-stage ${reminderNotice ? 'has-reminder' : ''}`}>
         {reminderNotice ? (
-          <button className="pet-reminder-pop" onClick={() => void openReminderPanel()} type="button">
-            <span className="pet-reminder-title">{reminderNotice.title}</span>
-            <span className="pet-reminder-time">{reminderNotice.remindAt}</span>
-          </button>
+          <div className={`pet-reminder-pop pet-reminder-pop-${reminderTheme}`} role="status">
+            <button className="pet-reminder-card" onClick={() => void openReminderPanel()} type="button">
+              <span className="pet-reminder-icon">!</span>
+              <span className="pet-reminder-copy">
+                <span className="pet-reminder-kicker">提醒时间到</span>
+                <span className="pet-reminder-title">{reminderNotice.title}</span>
+                <span className="pet-reminder-time">{reminderNotice.remindAt}</span>
+              </span>
+            </button>
+            <button
+              className="pet-reminder-close"
+              onClick={() => {
+                setReminderNotice(null);
+                clearReminderTimer();
+              }}
+              type="button"
+              aria-label="关闭提醒"
+            >
+              ×
+            </button>
+          </div>
         ) : null}
         <div className="pet-container">
           <PetAvatar emotion={emotion} mood={petMood} onActivate={() => void togglePanel()} />
