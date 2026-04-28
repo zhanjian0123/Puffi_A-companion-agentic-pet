@@ -44,5 +44,23 @@ npm run dev:python
 
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
+- `AI_PET_MODEL_API`：默认 `responses`；DeepSeek 等只支持 Chat Completions 的服务填 `chat_completions`
 - `OPENAI_BASE_URL`：接其他兼容平台时再填
 - `OPENAI_WEBSOCKET_BASE_URL`：只有供应商要求 WebSocket 地址时再填
+
+外部搜索 MCP 可选配置：
+
+- `AI_PET_MCP_ENABLED=true`
+- `AI_PET_MCP_SEARCH_ENABLED=true`
+- `AI_PET_MCP_SEARCH_NAME=websearch`
+- `AI_PET_MCP_SEARCH_URL`：百炼 MCP 外部调用里的 Streamable HTTP 地址
+- `AI_PET_MCP_SEARCH_API_KEY`：百炼 API Key；已配置 `DASHSCOPE_API_KEY` 时可省略
+
+DeepSeek V4 Flash 示例：
+
+```bash
+OPENAI_API_KEY=your_deepseek_api_key
+OPENAI_MODEL=deepseek-v4-flash
+OPENAI_BASE_URL=https://api.deepseek.com
+AI_PET_MODEL_API=chat_completions
+```

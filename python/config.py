@@ -43,6 +43,14 @@ def _optional_float_env(name: str, default: float) -> float:
     return float(value)
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    value = _optional_env(name)
+    if value is None:
+        return default
+
+    return value.lower() == "true"
+
+
 def _default_session_db_path() -> str:
     return str(Path.home() / ".ai-pet" / "agent_sessions.sqlite3")
 
@@ -75,8 +83,20 @@ class Settings:
     port: int = int(os.getenv("AI_PET_AGENT_PORT", "8787"))
     openai_api_key: str | None = _optional_env("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "qwen3.6-plus")
+    model_api: str = os.getenv("AI_PET_MODEL_API", "responses").lower()
     openai_base_url: str | None = _optional_env("OPENAI_BASE_URL")
     openai_websocket_base_url: str | None = _optional_env("OPENAI_WEBSOCKET_BASE_URL")
+    mcp_enabled: bool = _bool_env("AI_PET_MCP_ENABLED", True)
+    mcp_search_enabled: bool = _bool_env("AI_PET_MCP_SEARCH_ENABLED", False)
+    mcp_search_name: str = os.getenv("AI_PET_MCP_SEARCH_NAME", "websearch")
+    mcp_search_url: str | None = _optional_env("AI_PET_MCP_SEARCH_URL")
+    mcp_search_api_key: str | None = _optional_env("AI_PET_MCP_SEARCH_API_KEY") or _optional_env(
+        "DASHSCOPE_API_KEY"
+    )
+    mcp_search_timeout: float = _optional_float_env("AI_PET_MCP_SEARCH_TIMEOUT", 15.0)
+    mcp_search_sse_read_timeout: float = _optional_float_env("AI_PET_MCP_SEARCH_SSE_READ_TIMEOUT", 60.0)
+    mcp_search_cache_tools: bool = _bool_env("AI_PET_MCP_SEARCH_CACHE_TOOLS", True)
+    mcp_search_max_retry_attempts: int = int(os.getenv("AI_PET_MCP_SEARCH_MAX_RETRY_ATTEMPTS", "1"))
     session_id: str = os.getenv("AI_PET_SESSION_ID", "desktop-active")
     session_db_path: str = os.getenv("AI_PET_SESSION_DB_PATH", _default_session_db_path())
     session_context_limit: int | None = _optional_int_env("AI_PET_SESSION_CONTEXT_LIMIT")

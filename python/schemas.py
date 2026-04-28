@@ -36,7 +36,10 @@ class HealthResponse(BaseModel):
     sdk_installed: bool
     api_key_configured: bool
     model: str
+    model_api: str = "responses"
     base_url: str | None = None
+    mcp_enabled: bool = False
+    mcp_servers: list[str] = Field(default_factory=list)
 
 
 class KnowledgeImportRequest(BaseModel):

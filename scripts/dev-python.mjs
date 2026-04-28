@@ -7,10 +7,12 @@ const pythonExecutable =
   process.platform === 'win32'
     ? path.join(rootDir, '.venv', 'Scripts', 'python.exe')
     : path.join(rootDir, '.venv', 'bin', 'python');
+const host = process.env.AI_PET_AGENT_HOST || '127.0.0.1';
+const port = process.env.AI_PET_AGENT_PORT || '8787';
 
 const child = spawn(
   pythonExecutable,
-  ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', '8787', '--log-level', 'debug'],
+  ['-m', 'uvicorn', 'main:app', '--host', host, '--port', port, '--log-level', 'debug'],
   {
     cwd: pythonDir,
     env: process.env,

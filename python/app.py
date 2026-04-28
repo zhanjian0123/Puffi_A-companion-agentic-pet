@@ -43,11 +43,18 @@ app = FastAPI(title="AI Pet Agent Service", version="0.2.0")
 
 @app.on_event("startup")
 async def import_knowledge_on_startup() -> None:
+    await agent_service.startup()
+
     if not settings.knowledge_enabled or not settings.knowledge_import_on_startup:
         return
 
     result = await knowledge_service.start_background_import(reason="startup")
     print(f"[Knowledge] startup_import {result.message}", flush=True)
+
+
+@app.on_event("shutdown")
+async def cleanup_agent_service() -> None:
+    await agent_service.shutdown()
 
 
 @app.get("/health", response_model=HealthResponse)

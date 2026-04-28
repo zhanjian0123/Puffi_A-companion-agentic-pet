@@ -1,23 +1,29 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import datetime
+from typing import Any
 import json
 import re
 
 from config import settings
 from memory import MemoryService
+from mcp_servers import build_mcp_servers
 from schemas import ChatRequest, ChatResponse, ChatStreamEvent, HealthResponse, HistoryResponse
 from session_store import AgentSessionStore
 from tool_registry import build_agent_tools
 
 try:
-    from agents import Agent, Runner, set_default_openai_client
+    from agents import Agent, OpenAIChatCompletionsModel, Runner, set_default_openai_client
+    from agents.mcp import MCPServerManager
     from openai import AsyncOpenAI
     from openai.types.responses import ResponseTextDeltaEvent
 except ImportError:  # pragma: no cover - optional dependency
     Agent = None
+    OpenAIChatCompletionsModel = None
     Runner = None
     set_default_openai_client = None
+    MCPServerManager = None
     AsyncOpenAI = None
     ResponseTextDeltaEvent = None
 
@@ -32,6 +38,10 @@ SYSTEM_PROMPT = """你是 AI Pet 的桌面宠物助手。
 4. 当用户询问事实、定义、资料、项目文档、笔记或“某个东西是什么/怎么样/为什么”时，先调用 knowledge_search 检查本地知识库；不要等用户明确说“用本地知识库”才检索。
 5. 当用户询问“知识库里有哪些 / 列出知识库 / 有哪些文档 / 当前收录了什么资料 / 知识库文件清单”时，调用 list_knowledge_documents。
 6. 如果知识库有结果，优先基于知识库回答，并尽量给出来源文件；如果知识库没有结果，直接用通用模型知识自然回答，不要主动提“本地知识库没有找到”，除非用户明确询问知识库是否收录。
+7. 当用户询问新闻、价格、政策、近期变化、当前版本、实时资料或明显需要外部网页验证的信息时，调用可用的外部搜索 MCP 工具获取最新信息；不要只依赖模型记忆。
+8. 如果本地知识库结果可能已经过期，或用户明确要求“联网/外部搜索/查一下最新”，在 knowledge_search 之后再调用外部搜索 MCP 交叉验证。
+9. 使用外部搜索结果回答时，尽量说明来源、网页标题或发布时间；如果外部搜索工具不可用或失败，要如实说明，不能编造搜索结果。
+10. 搜索“今天/今日/最新新闻”时，必须先确认当前日期，并在搜索关键词中包含完整日期和年份，例如“YYYY年M月D日 今日要闻/新闻摘要”，避免只搜索“今日新闻”这类泛词。
 
 写入边界规则：
 1. 你只能通过待办相关工具修改受控的本地待办数据。
@@ -79,6 +89,21 @@ class AgentService:
             enabled=settings.memory_enabled,
         )
         self._tools = build_agent_tools()
+        self._mcp_servers = build_mcp_servers()
+        self._mcp_connected = False
+        self._client = None
+        self._mcp_manager = (
+            MCPServerManager(
+                self._mcp_servers,
+                connect_timeout_seconds=settings.mcp_search_timeout,
+                cleanup_timeout_seconds=settings.mcp_search_timeout,
+                drop_failed_servers=True,
+                strict=False,
+                connect_in_parallel=True,
+            )
+            if self._mcp_servers and MCPServerManager is not None
+            else None
+        )
         self._configure_client()
         self._agent = self._build_agent() if self.is_available else None
 
@@ -86,6 +111,7 @@ class AgentService:
     def sdk_installed(self) -> bool:
         return (
             Agent is not None
+            and OpenAIChatCompletionsModel is not None
             and Runner is not None
             and set_default_openai_client is not None
             and AsyncOpenAI is not None
@@ -107,8 +133,38 @@ class AgentService:
             sdk_installed=self.sdk_installed,
             api_key_configured=self.api_key_configured,
             model=settings.openai_model,
+            model_api=settings.model_api,
             base_url=settings.openai_base_url,
+            mcp_enabled=settings.mcp_enabled,
+            mcp_servers=[server.name for server in self._active_mcp_servers()],
         )
+
+    async def startup(self) -> None:
+        if self._mcp_manager is None:
+            return
+
+        active_servers = await self._mcp_manager.connect_all()
+        self._mcp_connected = True
+        print(
+            f"[MCP] connected servers={[server.name for server in active_servers]}",
+            flush=True,
+        )
+
+        if self._mcp_manager.failed_servers:
+            print(
+                f"[MCP] failed servers={[server.name for server in self._mcp_manager.failed_servers]}",
+                flush=True,
+            )
+
+        if self.is_available:
+            self._agent = self._build_agent()
+
+    async def shutdown(self) -> None:
+        if self._mcp_manager is None:
+            return
+
+        await self._mcp_manager.cleanup_all()
+        self._mcp_connected = False
 
     async def history(self, limit: int) -> HistoryResponse:
         messages = await self._session_store.get_recent_messages(limit)
@@ -169,6 +225,8 @@ class AgentService:
 
             if not emitted_text:
                 fallback_text = self._stringify_output(getattr(result, "final_output", ""))
+                if not fallback_text.strip():
+                    fallback_text = self._fallback_text_from_run_result(result, request.message)
                 if fallback_text:
                     yield ChatStreamEvent(type="delta", delta=fallback_text)
                 elif acknowledgement:
@@ -178,6 +236,12 @@ class AgentService:
                         type="delta",
                         delta="模型这次没有返回可用文本，请再发一次或换个完整问题试试。",
                     )
+            else:
+                final_text = self._stringify_output(getattr(result, "final_output", ""))
+                if not final_text.strip():
+                    fallback_text = self._fallback_text_from_run_result(result, request.message)
+                    if fallback_text:
+                        yield ChatStreamEvent(type="delta", delta=f"\n\n{fallback_text}")
 
             yield ChatStreamEvent(type="done")
         except Exception as error:
@@ -211,6 +275,8 @@ class AgentService:
                 session=self._session_store.session,
             )
             response_text = self._stringify_output(getattr(result, "final_output", ""))
+            if not response_text.strip():
+                response_text = self._fallback_text_from_run_result(result, request.message)
         except Exception as error:
             if not self._is_missing_final_response_error(error):
                 raise
@@ -234,8 +300,8 @@ class AgentService:
         if settings.openai_websocket_base_url:
             client_options["websocket_base_url"] = settings.openai_websocket_base_url
 
-        client = AsyncOpenAI(**client_options)
-        set_default_openai_client(client)
+        self._client = AsyncOpenAI(**client_options)
+        set_default_openai_client(self._client)
 
     def _build_agent(self, instructions: str | None = None) -> Agent:
         if Agent is None:
@@ -244,9 +310,28 @@ class AgentService:
         return Agent(
             name="AI Pet Assistant",
             instructions=instructions or SYSTEM_PROMPT,
-            model=settings.openai_model,
+            model=self._build_model(),
             tools=self._tools,
+            mcp_servers=self._active_mcp_servers(),
         )
+
+    def _build_model(self) -> object:
+        if settings.model_api == "chat_completions":
+            if OpenAIChatCompletionsModel is None or self._client is None:
+                raise RuntimeError("Chat Completions model is not available.")
+
+            return OpenAIChatCompletionsModel(
+                model=settings.openai_model,
+                openai_client=self._client,
+            )
+
+        return settings.openai_model
+
+    def _active_mcp_servers(self) -> list[object]:
+        if self._mcp_manager is None or not self._mcp_connected:
+            return []
+
+        return self._mcp_manager.active_servers
 
     async def _prepare_memory_state(self, request: ChatRequest) -> tuple[str, str, bool]:
         mode = self._normalize_mode(request.mode)
@@ -284,6 +369,7 @@ class AgentService:
         command_messages: list[str],
     ) -> str:
         sections = [f"当前模式：{mode}"]
+        sections.append(f"当前日期：{datetime.now().strftime('%Y-%m-%d')}")
 
         if command_messages:
             sections.append("本轮记忆操作结果：\n" + "\n".join(f"- {message}" for message in command_messages))
@@ -340,3 +426,106 @@ class AgentService:
             return ""
 
         return json.dumps(output, ensure_ascii=False)
+
+    def _fallback_text_from_run_result(self, result: object, user_message: str = "") -> str:
+        for text in reversed(self._extract_tool_output_texts(result)):
+            formatted = self._format_search_tool_output(text, user_message)
+            if formatted:
+                return formatted
+
+        return ""
+
+    def _extract_tool_output_texts(self, result: object) -> list[str]:
+        texts: list[str] = []
+        for item in getattr(result, "new_items", []) or []:
+            if type(item).__name__ != "ToolCallOutputItem":
+                continue
+
+            texts.extend(self._extract_text_from_tool_output(getattr(item, "output", None)))
+
+            raw_item = getattr(item, "raw_item", None)
+            if isinstance(raw_item, dict):
+                texts.extend(self._extract_text_from_tool_output(raw_item.get("output")))
+
+        return texts
+
+    def _extract_text_from_tool_output(self, output: object) -> list[str]:
+        if output is None:
+            return []
+
+        if isinstance(output, str):
+            return [output]
+
+        if isinstance(output, dict):
+            text = output.get("text")
+            if isinstance(text, str):
+                return [text]
+
+            nested_output = output.get("output")
+            if nested_output is not None:
+                return self._extract_text_from_tool_output(nested_output)
+
+            return []
+
+        if isinstance(output, list):
+            texts: list[str] = []
+            for item in output:
+                texts.extend(self._extract_text_from_tool_output(item))
+            return texts
+
+        return []
+
+    def _format_search_tool_output(self, text: str, user_message: str = "") -> str:
+        try:
+            payload: Any = json.loads(text)
+        except json.JSONDecodeError:
+            return text.strip()
+
+        if not isinstance(payload, dict):
+            return ""
+
+        pages = payload.get("pages")
+        if not isinstance(pages, list):
+            return ""
+
+        pages_to_format = self._prioritize_current_year_pages(pages, user_message)
+        formatted_pages: list[str] = []
+        for page in pages_to_format[:5]:
+            if not isinstance(page, dict):
+                continue
+
+            title = str(page.get("title") or "搜索结果").strip()
+            hostname = str(page.get("hostname") or "").strip()
+            url = str(page.get("url") or "").strip()
+            snippet = re.sub(r"\s+", " ", str(page.get("snippet") or "")).strip()
+            if len(snippet) > 220:
+                snippet = f"{snippet[:220]}..."
+
+            source = hostname or url
+            source_line = f"\n来源：{source}" if source else ""
+            url_line = f"\n链接：{url}" if url else ""
+            formatted_pages.append(
+                f"{len(formatted_pages) + 1}. {title}\n{snippet}{source_line}{url_line}"
+            )
+
+        if not formatted_pages:
+            return "外部搜索完成了，但没有拿到可用的搜索结果。"
+
+        return "我查到这些最新结果：\n\n" + "\n\n".join(formatted_pages)
+
+    def _prioritize_current_year_pages(self, pages: list[object], user_message: str) -> list[object]:
+        message = user_message.strip()
+        is_time_sensitive = any(keyword in message for keyword in ["今天", "今日", "最新", "新闻", "2026"])
+        if not is_time_sensitive:
+            return pages
+
+        current_year = datetime.now().strftime("%Y")
+
+        def page_text(page: object) -> str:
+            if not isinstance(page, dict):
+                return ""
+            return f"{page.get('title', '')} {page.get('snippet', '')} {page.get('url', '')}"
+
+        current_year_pages = [page for page in pages if current_year in page_text(page)]
+        other_pages = [page for page in pages if current_year not in page_text(page)]
+        return [*current_year_pages, *other_pages]
