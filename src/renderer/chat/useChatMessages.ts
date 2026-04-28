@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PANEL_VISIBLE_MESSAGE_COUNT } from '../../shared/chatConfig';
+import type { PetState } from '../../shared/types';
 import { requireElectronApi } from '../electronApi';
 import type { ChatMessage } from './ChatPanel';
 
@@ -8,6 +9,7 @@ interface UseChatMessagesOptions {
   shouldLoadHistory: boolean;
   onDone?: () => void;
   onError?: () => void;
+  onPetState?: (state: PetState) => void;
 }
 
 interface ActiveStream {
@@ -20,6 +22,7 @@ export function useChatMessages({
   shouldLoadHistory,
   onDone,
   onError,
+  onPetState,
 }: UseChatMessagesOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -80,6 +83,17 @@ export function useChatMessages({
     const unsubscribeChat = requireElectronApi().onChatStreamEvent((event) => {
       const activeStream = activeStreamRef.current;
       if (!activeStream || event.requestId !== activeStream.requestId) {
+        if (event.pet_state) {
+          onPetState?.(event.pet_state);
+        }
+        return;
+      }
+
+      if (event.pet_state) {
+        onPetState?.(event.pet_state);
+      }
+
+      if (event.type === 'state') {
         return;
       }
 
@@ -128,7 +142,7 @@ export function useChatMessages({
       clearFlushTimer();
       unsubscribeChat();
     };
-  }, [clearFlushTimer, flushPendingDelta, onDone, onError, scheduleStreamFlush]);
+  }, [clearFlushTimer, flushPendingDelta, onDone, onError, onPetState, scheduleStreamFlush]);
 
   useEffect(() => {
     if (!shouldLoadHistory) {
@@ -184,6 +198,7 @@ export function useChatMessages({
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
     setInput('');
     setIsLoading(true);
+    onPetState?.('thinking');
 
     try {
       await requireElectronApi().startChatStream({
@@ -207,10 +222,11 @@ export function useChatMessages({
       clearFlushTimer();
       pendingDeltaRef.current = '';
       activeStreamRef.current = null;
+      onPetState?.('error');
       onError?.();
       setIsLoading(false);
     }
-  }, [agentMode, clearFlushTimer, input, onError]);
+  }, [agentMode, clearFlushTimer, input, onError, onPetState]);
 
   return {
     appendAssistantMessage,

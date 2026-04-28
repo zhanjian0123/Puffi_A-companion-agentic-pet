@@ -1,3 +1,5 @@
+export type PetState = 'idle' | 'thinking' | 'searching' | 'tooling' | 'success' | 'error' | 'sleepy';
+
 export interface ChatHistoryMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -5,9 +7,10 @@ export interface ChatHistoryMessage {
 
 export interface ChatStreamEvent {
   requestId: string;
-  type: 'delta' | 'done' | 'error';
+  type: 'delta' | 'done' | 'error' | 'state';
   delta?: string;
   message?: string;
+  pet_state?: PetState;
 }
 
 export interface ChatRequestPayload {

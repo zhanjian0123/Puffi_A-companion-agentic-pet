@@ -34,9 +34,10 @@ export interface HistoryResult {
 }
 
 export interface ChatStreamChunk {
-  type: 'delta' | 'done' | 'error';
+  type: 'delta' | 'done' | 'error' | 'state';
   delta?: string;
   message?: string;
+  pet_state?: 'idle' | 'thinking' | 'searching' | 'tooling' | 'success' | 'error' | 'sleepy';
 }
 
 export interface KnowledgeUploadResult {

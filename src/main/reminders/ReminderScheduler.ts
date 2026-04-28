@@ -1,4 +1,4 @@
-import type { WebContents } from 'electron';
+import { BrowserWindow, type WebContents } from 'electron';
 import type { PythonAgentClient, ReminderDueItem } from '../python/PythonAgentClient';
 
 export interface ReminderSchedulerOptions {
@@ -50,7 +50,7 @@ export class ReminderScheduler {
           continue;
         }
 
-        webContents.send('reminder:due', {
+        sendReminderDueEvent({
           id: reminder.id,
           title: reminder.title,
           remindAt: reminder.remind_at,
@@ -61,6 +61,14 @@ export class ReminderScheduler {
       // Python may be unavailable while the desktop shell is still alive; try again on the next tick.
     } finally {
       this.isChecking = false;
+    }
+  }
+}
+
+function sendReminderDueEvent(payload: { id: string; title: string; remindAt: string }): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send('reminder:due', payload);
     }
   }
 }

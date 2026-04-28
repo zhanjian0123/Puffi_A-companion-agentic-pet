@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
@@ -95,6 +95,59 @@ def _json_list_file(path: str) -> list[dict[str, Any]]:
     return items
 
 
+def _json_object_env(name: str) -> dict[str, Any] | None:
+    value = _optional_env(name)
+    if value is None:
+        return None
+
+    parsed = json.loads(value)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{name} must be a JSON object.")
+
+    return parsed
+
+
+def _default_model_extra_body() -> dict[str, Any] | None:
+    configured = _json_object_env("AI_PET_MODEL_EXTRA_BODY_JSON")
+    if configured is not None:
+        return configured
+
+    if _is_deepseek_chat_completions():
+        return {"thinking": {"type": "disabled"}}
+
+    return None
+
+
+def _is_deepseek_chat_completions() -> bool:
+    model_api = _model_api_env()
+    base_url = (_optional_env("OPENAI_BASE_URL") or "").lower()
+    model = os.getenv("OPENAI_MODEL", "").lower()
+    return model_api == "chat_completions" and (
+        "api.deepseek.com" in base_url or model.startswith("deepseek-")
+    )
+
+
+def _chat_completions_history_mode_env() -> str:
+    value = os.getenv("AI_PET_CHAT_COMPLETIONS_HISTORY_MODE", "auto")
+    normalized = value.split("#", 1)[0].strip().lower().replace("-", "_")
+    if normalized in {"auto", "full", "text_only"}:
+        return normalized
+
+    print(
+        f"[Config] unsupported AI_PET_CHAT_COMPLETIONS_HISTORY_MODE={value!r}, falling back to auto",
+        flush=True,
+    )
+    return "auto"
+
+
+def _default_chat_completions_history_mode() -> str:
+    configured = _chat_completions_history_mode_env()
+    if configured != "auto":
+        return configured
+
+    return "text_only" if _is_deepseek_chat_completions() else "full"
+
+
 def _default_session_db_path() -> str:
     return str(Path.home() / ".ai-pet" / "agent_sessions.sqlite3")
 
@@ -128,6 +181,8 @@ class Settings:
     model_api: str = _model_api_env()
     openai_base_url: str | None = _optional_env("OPENAI_BASE_URL")
     openai_websocket_base_url: str | None = _optional_env("OPENAI_WEBSOCKET_BASE_URL")
+    model_extra_body: dict[str, Any] | None = field(default_factory=_default_model_extra_body)
+    chat_completions_history_mode: str = field(default_factory=_default_chat_completions_history_mode)
     mcp_enabled: bool = _bool_env("AI_PET_MCP_ENABLED", True)
     mcp_servers_path: str = _default_mcp_servers_path()
     mcp_servers: list[dict[str, Any]] | None = None

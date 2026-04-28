@@ -15,9 +15,10 @@ class ChatResponse(BaseModel):
 
 
 class ChatStreamEvent(BaseModel):
-    type: Literal["delta", "done", "error"]
+    type: Literal["delta", "done", "error", "state"]
     delta: str | None = None
     message: str | None = None
+    pet_state: Literal["idle", "thinking", "searching", "tooling", "success", "error", "sleepy"] | None = None
 
 
 class HistoryMessage(BaseModel):

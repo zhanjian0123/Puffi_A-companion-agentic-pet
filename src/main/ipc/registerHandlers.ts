@@ -61,21 +61,18 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
           message: payload.message,
           mode: payload.mode,
         })) {
-          if (sender.isDestroyed()) {
-            return;
-          }
-
-          sender.send('chat:stream-event', {
+          sendChatStreamEvent({
             requestId,
             ...chunk,
           });
         }
       } catch (error) {
         if (!sender.isDestroyed()) {
-          sender.send('chat:stream-event', {
+          sendChatStreamEvent({
             requestId,
             type: 'error',
             message: error instanceof Error ? error.message : '流式响应失败，请稍后再试。',
+            pet_state: 'error',
           });
         }
       }
@@ -185,4 +182,12 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     dragSessions.delete(event.sender.id);
     return { success: true };
   });
+}
+
+function sendChatStreamEvent(payload: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send('chat:stream-event', payload);
+    }
+  }
 }

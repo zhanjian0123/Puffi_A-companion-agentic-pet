@@ -14,13 +14,15 @@ from session_store import AgentSessionStore
 from tool_registry import build_agent_tools
 
 try:
-    from agents import Agent, OpenAIChatCompletionsModel, Runner, set_default_openai_client
+    from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, RunConfig, Runner, set_default_openai_client
     from agents.mcp import MCPServerManager
     from openai import AsyncOpenAI
     from openai.types.responses import ResponseTextDeltaEvent
 except ImportError:  # pragma: no cover - optional dependency
     Agent = None
+    ModelSettings = None
     OpenAIChatCompletionsModel = None
+    RunConfig = None
     Runner = None
     set_default_openai_client = None
     MCPServerManager = None
@@ -173,8 +175,9 @@ class AgentService:
     async def chat_stream(self, request: ChatRequest) -> AsyncIterator[ChatStreamEvent]:
         runtime_context, acknowledgement, short_circuit = await self._prepare_memory_state(request)
         if short_circuit:
+            yield ChatStreamEvent(type="state", pet_state="tooling")
             yield ChatStreamEvent(type="delta", delta=acknowledgement or "已处理记忆请求。")
-            yield ChatStreamEvent(type="done")
+            yield ChatStreamEvent(type="done", pet_state="success")
             return
 
         if not self.sdk_installed:
@@ -184,6 +187,7 @@ class AgentService:
                     "当前 Python 环境没有可用的 OpenAI Agents SDK。"
                     "请确认你是在项目的 .venv 中安装了 `openai-agents`。"
                 ),
+                pet_state="error",
             )
             return
 
@@ -191,11 +195,16 @@ class AgentService:
             yield ChatStreamEvent(
                 type="error",
                 message="还没有检测到 OPENAI_API_KEY，请先在 .env 中补齐后再试。",
+                pet_state="error",
             )
             return
 
         if self._agent is None or Runner is None:
-            yield ChatStreamEvent(type="error", message="Agent 初始化失败，请检查模型和 base URL 配置。")
+            yield ChatStreamEvent(
+                type="error",
+                message="Agent 初始化失败，请检查模型和 base URL 配置。",
+                pet_state="error",
+            )
             return
 
         agent = self._build_agent_for_runtime_context(runtime_context)
@@ -203,17 +212,26 @@ class AgentService:
         result = Runner.run_streamed(
             agent,
             request.message,
+            run_config=self._build_run_config(),
             session=self._session_store.session,
         )
 
         emitted_text = False
+        current_pet_state = "thinking"
 
         try:
+            yield ChatStreamEvent(type="state", pet_state=current_pet_state)
+
             if acknowledgement:
                 emitted_text = True
                 yield ChatStreamEvent(type="delta", delta=f"{acknowledgement}\n\n")
 
             async for event in result.stream_events():
+                next_pet_state = self._extract_pet_state_from_stream_event(event)
+                if next_pet_state and next_pet_state != current_pet_state:
+                    current_pet_state = next_pet_state
+                    yield ChatStreamEvent(type="state", pet_state=current_pet_state)
+
                 delta = self._extract_stream_delta(event)
                 if delta:
                     emitted_text = True
@@ -243,9 +261,9 @@ class AgentService:
                     if fallback_text:
                         yield ChatStreamEvent(type="delta", delta=f"\n\n{fallback_text}")
 
-            yield ChatStreamEvent(type="done")
+            yield ChatStreamEvent(type="done", pet_state="success")
         except Exception as error:
-            yield ChatStreamEvent(type="error", message=f"模型调用失败：{error}")
+            yield ChatStreamEvent(type="error", message=f"模型调用失败：{error}", pet_state="error")
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         runtime_context, acknowledgement, short_circuit = await self._prepare_memory_state(request)
@@ -272,6 +290,7 @@ class AgentService:
             result = await Runner.run(
                 agent,
                 request.message,
+                run_config=self._build_run_config(),
                 session=self._session_store.session,
             )
             response_text = self._stringify_output(getattr(result, "final_output", ""))
@@ -307,13 +326,78 @@ class AgentService:
         if Agent is None:
             raise RuntimeError("OpenAI Agents SDK is not installed.")
 
-        return Agent(
-            name="AI Pet Assistant",
-            instructions=instructions or SYSTEM_PROMPT,
-            model=self._build_model(),
-            tools=self._tools,
-            mcp_servers=self._active_mcp_servers(),
-        )
+        agent_options = {
+            "name": "AI Pet Assistant",
+            "instructions": instructions or SYSTEM_PROMPT,
+            "model": self._build_model(),
+            "tools": self._tools,
+            "mcp_servers": self._active_mcp_servers(),
+        }
+        model_settings = self._build_model_settings()
+        if model_settings is not None:
+            agent_options["model_settings"] = model_settings
+
+        return Agent(**agent_options)
+
+    def _build_model_settings(self) -> object | None:
+        if ModelSettings is None or settings.model_extra_body is None:
+            return None
+
+        return ModelSettings(extra_body=settings.model_extra_body)
+
+    def _build_run_config(self) -> object | None:
+        if RunConfig is None or settings.model_api != "chat_completions":
+            return None
+
+        if settings.chat_completions_history_mode != "text_only":
+            return None
+
+        return RunConfig(session_input_callback=self._chat_completions_session_input)
+
+    def _chat_completions_session_input(
+        self,
+        history_items: list[dict[str, Any]],
+        new_items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        cleaned_history = [
+            item
+            for item in (self._clean_chat_completions_history_item(item) for item in history_items)
+            if item is not None
+        ]
+        return cleaned_history + new_items
+
+    def _clean_chat_completions_history_item(self, item: object) -> dict[str, Any] | None:
+        if not isinstance(item, dict):
+            return None
+
+        role = item.get("role")
+        if role not in {"user", "assistant"}:
+            return None
+
+        content = self._extract_chat_message_text(item.get("content"))
+        if not content:
+            return None
+
+        return {
+            "role": role,
+            "content": content,
+        }
+
+    def _extract_chat_message_text(self, value: object) -> str:
+        if isinstance(value, str):
+            return value.strip()
+
+        if isinstance(value, list):
+            parts = [self._extract_chat_message_text(item) for item in value]
+            return "\n".join(part for part in parts if part).strip()
+
+        if isinstance(value, dict):
+            for key in ("text", "content", "value"):
+                text = self._extract_chat_message_text(value.get(key))
+                if text:
+                    return text
+
+        return ""
 
     def _build_model(self) -> object:
         if settings.model_api == "chat_completions":
@@ -414,6 +498,59 @@ class AgentService:
             return delta
 
         return ""
+
+    def _extract_pet_state_from_stream_event(self, event: object) -> str | None:
+        if getattr(event, "type", None) != "run_item_stream_event":
+            return None
+
+        item = getattr(event, "item", None)
+        item_type = type(item).__name__.lower()
+        event_name = str(getattr(event, "name", "")).lower()
+
+        if "tool" not in item_type and "tool" not in event_name:
+            return None
+
+        tool_name = self._extract_tool_name(item) or self._extract_tool_name(event)
+        if not tool_name:
+            return "tooling"
+
+        return self._pet_state_for_tool_name(tool_name)
+
+    def _pet_state_for_tool_name(self, tool_name: str) -> str:
+        normalized = tool_name.lower()
+        if "search" in normalized or "bailian_web_search" in normalized:
+            return "searching"
+
+        return "tooling"
+
+    def _extract_tool_name(self, value: object, depth: int = 0) -> str | None:
+        if value is None or depth > 4:
+            return None
+
+        if isinstance(value, dict):
+            for key in ("name", "tool_name", "server_label"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate
+
+            for key in ("raw_item", "item", "function", "tool", "tool_call"):
+                candidate = self._extract_tool_name(value.get(key), depth + 1)
+                if candidate:
+                    return candidate
+
+            return None
+
+        for attr in ("name", "tool_name", "server_label"):
+            candidate = getattr(value, attr, None)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate
+
+        for attr in ("raw_item", "item", "function", "tool", "tool_call"):
+            candidate = self._extract_tool_name(getattr(value, attr, None), depth + 1)
+            if candidate:
+                return candidate
+
+        return None
 
     def _is_missing_final_response_error(self, error: object) -> bool:
         return "did not produce a final response" in str(error).lower()
