@@ -5,7 +5,7 @@ import { useChatMessages } from './chat/useChatMessages';
 import { useKnowledgeUpload } from './chat/useKnowledgeUpload';
 import { PetAvatar, type PetMood } from './pet/PetAvatar';
 import { ENABLE_DESKTOP_DEBUG_LOGS } from '../shared/devFlags';
-import type { PetState, ReminderDueEvent } from '../shared/types';
+import type { PetDockSide, PetState, ReminderDueEvent } from '../shared/types';
 
 type PetEmotion = 'happy' | 'neutral' | 'sad';
 const DEFAULT_AGENT_MODE = 'chat';
@@ -20,6 +20,7 @@ export default function App() {
   const mode = new URLSearchParams(window.location.search).get('mode') === 'panel' ? 'panel' : 'pet';
   const [emotion, setEmotion] = useState<PetEmotion>('neutral');
   const [petMood, setPetMood] = useState<PetMood>('idle');
+  const [petDockSide, setPetDockSide] = useState<PetDockSide>(null);
   const [reminderNotice, setReminderNotice] = useState<ReminderDueEvent | null>(null);
   const [reminderTheme, setReminderTheme] = useState<ReminderTheme>('mint');
   const petMoodRef = useRef<PetMood>('idle');
@@ -63,7 +64,7 @@ export default function App() {
       } else if (state === 'error') {
         schedulePetMood('idle', 2600);
       } else if (state === 'idle') {
-        schedulePetMood('sleepy', 60000);
+        schedulePetMood('sleepy', 30000);
       }
     },
     [clearMoodTimer, schedulePetMood]
@@ -120,7 +121,7 @@ export default function App() {
       };
     }
 
-    schedulePetMood('sleepy', 60000);
+    schedulePetMood('sleepy', 30000);
 
     const wakePet = () => {
       if (petMoodRef.current === 'sleepy') {
@@ -130,7 +131,7 @@ export default function App() {
       }
 
       if (petMoodRef.current === 'idle') {
-        schedulePetMood('sleepy', 10000);
+        schedulePetMood('sleepy', 30000);
       }
     };
 
@@ -165,6 +166,17 @@ export default function App() {
       }, 12000);
     });
   }, [clearReminderTimer, mode, setHappy]);
+
+  useEffect(() => {
+    const api = getElectronApi();
+    if (!api || mode !== 'pet') {
+      return undefined;
+    }
+
+    return api.onPetDockChange((event) => {
+      setPetDockSide(event.side);
+    });
+  }, [mode]);
 
   const setPanelOpen = async (nextOpen: boolean) => {
     await requireElectronApi().setPanelOpen(nextOpen);
@@ -227,7 +239,12 @@ export default function App() {
           </div>
         ) : null}
         <div className="pet-container">
-          <PetAvatar emotion={emotion} mood={petMood} onActivate={() => void togglePanel()} />
+          <PetAvatar
+            dockSide={petDockSide}
+            emotion={emotion}
+            mood={petMood}
+            onActivate={() => void togglePanel()}
+          />
         </div>
       </div>
     </div>

@@ -387,9 +387,57 @@ body {
   animation: blob-sleep 3.4s ease-in-out infinite;
 }
 
+.pet.docked-left,
+.pet.docked-right {
+  animation: dock-peek 3.2s ease-in-out infinite;
+}
+
+.pet.docked-left .blob-body {
+  transform: translateX(4px) rotate(-2deg) scale(1.04);
+  transform-origin: 18% 54%;
+  border-radius: 60% 43% 44% 58% / 58% 63% 37% 43%;
+}
+
+.pet.docked-right .blob-body {
+  transform: translateX(-4px) rotate(2deg) scale(1.04);
+  transform-origin: 82% 54%;
+  border-radius: 43% 60% 58% 44% / 63% 58% 43% 37%;
+}
+
+.pet.docked-left .blob-face {
+  transform: translate(calc(var(--look-x) + 26px), var(--look-y));
+}
+
+.pet.docked-right .blob-face {
+  transform: translate(calc(var(--look-x) - 26px), var(--look-y));
+}
+
+.pet.docked-left .blob-eyes,
+.pet.docked-right .blob-eyes {
+  gap: 20px;
+}
+
+.pet.docked-left .blob-cheek {
+  transform: translateX(26px);
+}
+
+.pet.docked-right .blob-cheek {
+  transform: translateX(-26px);
+}
+
+.pet.docked-left .blob-cheek.left,
+.pet.docked-right .blob-cheek.right {
+  opacity: 0.45;
+}
+
 @keyframes blob-idle {
   0%, 100% { transform: translateY(0) rotate(-1deg); }
   50% { transform: translateY(-8px) rotate(1deg); }
+}
+
+@keyframes dock-peek {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 
 .blob-body {

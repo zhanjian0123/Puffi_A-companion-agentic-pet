@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain, screen } from 'electron';
 import type { PythonAgentClient } from '../python/PythonAgentClient';
 import { ENABLE_DESKTOP_DEBUG_LOGS } from '../../shared/devFlags';
+import type { PetDockSide } from '../../shared/types';
 
 export interface WindowController {
   closePanel: () => void;
@@ -12,11 +13,17 @@ export interface WindowController {
 }
 
 interface DragSession {
+  moved: boolean;
   startWindowX: number;
   startWindowY: number;
   startX: number;
   startY: number;
 }
+
+const SIDE_SNAP_THRESHOLD = 80; // Distance in pixels from screen edge to trigger snap
+const PET_BODY_LEFT = 26;
+const PET_BODY_WIDTH = 128;
+const PET_BODY_SIDE_OVERHANG = 80;
 
 interface StreamPayload {
   message: string;
@@ -144,6 +151,7 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     if (window) {
       const [startWindowX, startWindowY] = window.getPosition();
       dragSessions.set(event.sender.id, {
+        moved: false,
         startWindowX,
         startWindowY,
         startX: point.x,
@@ -164,6 +172,7 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     if (window && session) {
       const dx = point.x - session.startX;
       const dy = point.y - session.startY;
+      session.moved = session.moved || Math.abs(dx) > 6 || Math.abs(dy) > 6;
       window.setPosition(
         Math.round(session.startWindowX + dx),
         Math.round(session.startWindowY + dy),
@@ -176,12 +185,54 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
   });
 
   ipcMain.handle('window:drag-end', async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const session = dragSessions.get(event.sender.id);
+
     if (ENABLE_DESKTOP_DEBUG_LOGS) {
       console.log('[Main] Drag end');
     }
+
+    if (window && session?.moved) {
+      const dockSide = snapPetWindowToSide(window);
+      sendPetDockChange(window, dockSide);
+      windows.syncPanelToPet();
+    }
+
     dragSessions.delete(event.sender.id);
     return { success: true };
   });
+}
+
+function snapPetWindowToSide(window: BrowserWindow): PetDockSide {
+  if (window.isDestroyed()) {
+    return null;
+  }
+
+  const bounds = window.getBounds();
+  const display = screen.getDisplayMatching(bounds);
+  const workArea = display.workArea;
+  const windowCenterX = bounds.x + Math.round(bounds.width / 2);
+  const leftDistance = Math.abs(windowCenterX - workArea.x);
+  const rightEdge = workArea.x + workArea.width;
+  const rightDistance = Math.abs(rightEdge - windowCenterX);
+
+  if (leftDistance > SIDE_SNAP_THRESHOLD && rightDistance > SIDE_SNAP_THRESHOLD) {
+    return null;
+  }
+
+  const dockSide: PetDockSide = leftDistance <= rightDistance ? 'left' : 'right';
+  const leftSnapX = workArea.x - PET_BODY_LEFT - PET_BODY_SIDE_OVERHANG;
+  const rightSnapX = rightEdge - PET_BODY_LEFT - PET_BODY_WIDTH + PET_BODY_SIDE_OVERHANG;
+  const nextX = dockSide === 'left' ? leftSnapX : rightSnapX;
+  const nextY = Math.min(Math.max(bounds.y, workArea.y + 12), workArea.y + workArea.height - bounds.height - 12);
+  window.setPosition(Math.round(nextX), Math.round(nextY), true);
+  return dockSide;
+}
+
+function sendPetDockChange(window: BrowserWindow, side: PetDockSide): void {
+  if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+    window.webContents.send('pet:dock-change', { side });
+  }
 }
 
 function sendChatStreamEvent(payload: unknown): void {

@@ -7,10 +7,12 @@ import {
 } from 'react';
 import { requireElectronApi } from '../electronApi';
 import { ENABLE_DESKTOP_DEBUG_LOGS } from '../../shared/devFlags';
+import type { PetDockSide } from '../../shared/types';
 
 export type PetMood = 'idle' | 'thinking' | 'searching' | 'tooling' | 'success' | 'error' | 'sleepy';
 
 export interface PetAvatarProps {
+  dockSide?: PetDockSide;
   emotion: 'happy' | 'neutral' | 'sad' | 'excited';
   mood?: PetMood;
   onActivate?: () => void;
@@ -28,7 +30,7 @@ function moodFromEmotion(emotion: PetAvatarProps['emotion']): PetMood {
   return 'idle';
 }
 
-export function PetAvatar({ emotion, mood, onActivate }: PetAvatarProps) {
+export function PetAvatar({ dockSide = null, emotion, mood, onActivate }: PetAvatarProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [lookOffset, setLookOffset] = useState({ x: 0, y: 0 });
@@ -60,6 +62,7 @@ export function PetAvatar({ emotion, mood, onActivate }: PetAvatarProps) {
   };
 
   const petMood = mood ?? moodFromEmotion(emotion);
+  const dockClass = !isDragging && dockSide ? `docked-${dockSide}` : '';
   const petStyle = {
     '--look-x': `${lookOffset.x}px`,
     '--look-y': `${lookOffset.y}px`,
@@ -152,10 +155,10 @@ export function PetAvatar({ emotion, mood, onActivate }: PetAvatarProps) {
   };
 
   return (
-    <div className="pet-shell">
+    <div className={`pet-shell ${dockClass}`}>
       <div className={`pet-drag-echo ${isDragging ? 'visible' : ''}`}></div>
       <button
-        className={`pet blob-pet ${petMood} ${isDragging ? 'dragging' : ''} ${
+        className={`pet blob-pet ${petMood} ${dockClass} ${isDragging ? 'dragging' : ''} ${
           isPressed ? 'pressed' : ''
         }`}
         draggable={false}

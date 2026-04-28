@@ -1,4 +1,5 @@
 export type PetState = 'idle' | 'thinking' | 'searching' | 'tooling' | 'success' | 'error' | 'sleepy';
+export type PetDockSide = 'left' | 'right' | null;
 
 export interface ChatHistoryMessage {
   role: 'user' | 'assistant';
@@ -31,6 +32,10 @@ export interface ReminderDueEvent {
   remindAt: string;
 }
 
+export interface PetDockEvent {
+  side: PetDockSide;
+}
+
 export interface ElectronAPI {
   chat: (payload: ChatRequestPayload) => Promise<{ response: string; action?: unknown }>;
   history: (limit?: number) => Promise<{ messages: ChatHistoryMessage[] }>;
@@ -39,6 +44,7 @@ export interface ElectronAPI {
   uploadKnowledgeFile: (file: unknown, requestId: string) => Promise<{ message: string }>;
   onKnowledgeUploadProgress: (callback: (event: KnowledgeUploadProgressEvent) => void) => () => void;
   onReminderDue: (callback: (event: ReminderDueEvent) => void) => () => void;
+  onPetDockChange: (callback: (event: PetDockEvent) => void) => () => void;
   setPanelOpen: (isOpen: boolean) => Promise<{ success: boolean }>;
   togglePanel: () => Promise<{ success: boolean; isOpen: boolean }>;
   startWindowDrag: (x: number, y: number) => Promise<{ success: boolean }>;

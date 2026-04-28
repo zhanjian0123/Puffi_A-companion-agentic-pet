@@ -3,6 +3,7 @@ import type {
   ChatRequestPayload,
   ChatStreamEvent,
   KnowledgeUploadProgressEvent,
+  PetDockEvent,
   ReminderDueEvent,
 } from '../shared/types';
 
@@ -52,6 +53,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener('reminder:due', listener);
+      };
+    },
+    onPetDockChange: (callback: (event: PetDockEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: PetDockEvent) => {
+        callback(payload);
+      };
+
+      ipcRenderer.on('pet:dock-change', listener);
+
+      return () => {
+        ipcRenderer.removeListener('pet:dock-change', listener);
       };
     },
     setPanelOpen: (isOpen: boolean) => ipcRenderer.invoke('window:set-panel-open', isOpen),
