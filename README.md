@@ -1,83 +1,108 @@
 # AI Pet
 
-一个最小可运行的桌面宠物助手骨架，当前只保留三条核心链路：
+AI Pet 是一个常驻桌面的 AI 宠物助手。它不是一个传统聊天窗口，而是一个会陪在屏幕边上的小团子：平时待机、睡觉、跟随鼠标互动；需要帮忙时可以聊天、搜索、记录提醒，也会用不同状态动画回应正在发生的事情。✨
 
-- Electron 主进程：创建宠物窗和聊天悬浮窗
-- React 渲染层：宠物交互和聊天面板
-- Python 服务：通过 OpenAI Agents SDK 执行聊天
+这个项目希望把 AI 助手做得更轻、更近、更有陪伴感。它可以像桌面小伙伴一样停在角落，也可以吸附在屏幕左右边缘，尽量不打扰工作，同时在需要时主动冒出来提醒你。
 
-## Current Structure
+## 展示 🖼️
 
-```text
-src/
-  main/        Electron 窗口、IPC、Python 服务桥接
-  renderer/    宠物 UI 和聊天 UI
-  shared/      preload 类型定义
-python/
-  main.py      Uvicorn 入口
-  app.py       FastAPI 路由
-  service.py   OpenAI Agents SDK 封装
-  schemas.py   接口模型
-  config.py    环境变量加载
-```
+### 正常
 
-## Development
+<p align="center">
+  <img src="png/正常.png" alt="AI Pet 封面" width="300" />
+</p>
 
-前端桌面端：
+### 状态展示
+
+<p align="center">
+  <img src="png/待机.png" alt="待机状态" width="110" />
+  <img src="png/搜索中.png" alt="搜索中状态" width="140" />
+  <img src="png/搜索2.png" alt="搜索状态补充" width="140" />
+  <img src="png/完成任务.png" alt="完成任务状态" width="120" />
+  <img src="png/吸附.png" alt="边缘吸附状态" width="65" />
+  <img src="png/疑问.png" alt="疑问状态" width="130" />
+</p>
+
+<p align="center">
+  <sub>待机 · 搜索中 · 搜索结果 · 完成任务 · 边缘吸附 · 疑问</sub>
+</p>
+
+### 功能截图
+
+<table>
+  <tr>
+    <td align="center" valign="middle" width="20%">
+      <img src="png/mcp能力.png" alt="MCP 搜索能力" width="140" />
+    </td>
+    <td align="center" valign="middle" width="20%">
+      <img src="png/skill能力.png" alt="Skill 能力" width="140" />
+    </td>
+    <td align="center" valign="middle" width="20%">
+      <img src="png/memory.png" alt="Memory 记忆能力" width="140" />
+    </td>
+    <td align="center" valign="middle" width="20%">
+      <img src="png/提醒1.png" alt="提醒弹窗样式一" width="140" />
+    </td>
+    <td align="center" valign="middle" width="20%">
+      <img src="png/提醒2.png" alt="提醒弹窗样式二" width="140" />
+    </td>
+  </tr>
+</table>
+
+
+## 它能做什么 💡
+
+- 陪伴在桌面上：软体团子形象会在待机、思考、搜索、调用工具、完成任务、睡觉等状态之间切换。
+- 自然聊天：可以像桌面助手一样和你对话，回答日常问题，也能根据上下文继续交流。
+- 外部搜索：接入 MCP 搜索服务后，可以查询实时信息，例如新闻、人物动态、资料检索等。
+- 提醒事项：可以通过自然语言创建提醒，到时间后在宠物旁边弹出提醒卡片。
+- 记忆与技能：项目内置了面向长期使用的记忆与技能机制，可以逐步沉淀偏好、知识和可复用能力。
+- 边缘吸附：拖动到屏幕左右两侧时，宠物会吸附到边缘，以更低打扰的方式陪在旁边。
+
+## 适合的使用场景 🌿
+
+- 工作时快速问问题，不想频繁切换浏览器或聊天应用。
+- 需要一个轻量的桌面提醒，不希望提醒一来就弹出完整聊天窗口。
+- 想让 AI 助手拥有更明显的“状态感”，知道它是在思考、搜索还是完成任务。
+- 想尝试把 MCP、外部搜索、记忆、提醒和桌面交互结合在一个完整产品里。
+
+## 当前体验 🧩
+
+AI Pet 由两个主要界面组成：
+
+- 桌面宠物：常驻屏幕，负责展示状态、动作、提醒和轻量互动。
+- 聊天面板：点击宠物后打开，用来输入问题、查看回答和完成更复杂的交互。
+
+当你询问需要实时信息的问题时，宠物会进入搜索状态；当提醒到期时，不会强行打开聊天面板，而是在宠物附近展示一张独立的提醒卡片。拖动宠物到屏幕左右边缘时，它会切换成侧边探出的姿态，保留眼睛和嘴巴可见。
+
+## 项目特点 ✨
+
+- 桌面优先：不是网页里的聊天机器人，而是贴近桌面工作流的常驻助手。
+- 状态驱动：宠物形象会跟随 AI 当前行为变化，让等待过程更可感知。
+- 工具可扩展：可以继续接入更多 MCP 服务，让宠物获得搜索、查询、自动化等新能力。
+- 本地感强：提醒、记忆、技能和宠物交互围绕个人桌面环境设计。
+- 轻量陪伴：默认不打断工作，只有在你点击、拖动、提问或提醒到期时才更明显地出现。
+
+## 快速开始 🚀
+
+首次使用前，复制 `.env.example` 为 `.env`，填入模型服务所需的密钥和模型名称。需要外部搜索能力时，在 `mcp/servers.json` 中开启对应 MCP 服务。
+
+启动桌面端：
 
 ```bash
 npm run dev:desktop
 ```
 
-Python 后端：
+启动 Python 服务：
 
 ```bash
 npm run dev:python
 ```
 
-如果开发时希望自动打开 Electron DevTools，可以直接把
-`src/main/app/devFlags.ts` 里的 `OPEN_DEVTOOLS` 改成 `true`。
+## 后续计划 🌱
 
-## Environment
-
-复制 `.env.example` 到 `.env`，至少填写：
-
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `AI_PET_MODEL_API`：默认 `responses`；DeepSeek 等只支持 Chat Completions 的服务填 `chat_completions`
-- `OPENAI_BASE_URL`：接其他兼容平台时再填
-- `OPENAI_WEBSOCKET_BASE_URL`：只有供应商要求 WebSocket 地址时再填
-
-外部搜索 MCP 可选配置：
-
-- `AI_PET_MCP_ENABLED=true`
-- `mcp/servers.json`：MCP 服务列表，支持多个 Streamable HTTP MCP
-- `AI_PET_MCP_CONNECT_TIMEOUT`：MCP 连接超时，默认 `15`
-- `AI_PET_MCP_CLEANUP_TIMEOUT`：MCP 清理超时，默认 `15`
-
-`mcp/servers.json` 示例：
-
-```json
-[
-  {
-    "name": "AliyunBailianMCP_WebSearch",
-    "type": "streamable_http",
-    "enabled": true,
-    "url": "https://dashscope.aliyuncs.com/api/v1/mcps/YOUR_MCP_NAME/mcp",
-    "api_key_env": "DASHSCOPE_API_KEY",
-    "timeout": 15,
-    "sse_read_timeout": 60,
-    "cache_tools": true,
-    "max_retry_attempts": 1
-  }
-]
-```
-
-DeepSeek V4 Flash 示例：
-
-```bash
-OPENAI_API_KEY=your_deepseek_api_key
-OPENAI_MODEL=deepseek-v4-flash
-OPENAI_BASE_URL=https://api.deepseek.com
-AI_PET_MODEL_API=chat_completions
-```
+- 更丰富的宠物动作和情绪表现。
+- 更完整的提醒管理界面。
+- 更多 MCP 工具接入模板。
+- 更细致的记忆和技能管理体验。
+- 打包成更方便安装和日常使用的桌面应用。
