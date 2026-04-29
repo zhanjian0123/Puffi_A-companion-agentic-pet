@@ -56,6 +56,14 @@ class DocumentSummarizer:
 
         return self._summarize_with_rules(title=title, text=clipped)
 
+    def summarize_preview(self, *, title: str, text: str) -> DocumentSummary:
+        summary = self.summarize(title=title, text=text)
+        if summary.summary.strip():
+            return summary
+
+        clipped = text.strip()[: max(self._config.max_chars, 800)]
+        return self._summarize_with_rules(title=title, text=clipped)
+
     def _build_client(self):
         if not self._config.llm_enabled or OpenAI is None or not self._config.api_key:
             return None

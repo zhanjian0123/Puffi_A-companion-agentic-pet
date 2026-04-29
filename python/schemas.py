@@ -82,6 +82,8 @@ class KnowledgeUploadResponse(BaseModel):
     imported: int
     skipped: int
     failed: int
+    summary: str | None = None
+    keywords: list[str] = Field(default_factory=list)
 
 
 class KnowledgeQueryRequest(BaseModel):
@@ -197,8 +199,50 @@ class ScheduledTask(BaseModel):
     last_error: str | None = None
 
 
+class ScheduledTaskRun(BaseModel):
+    id: str
+    task_id: str
+    task_title: str
+    started_at: str
+    status: str
+    prompt: str
+    finished_at: str | None = None
+    response: str | None = None
+    error: str | None = None
+    knowledge_document: str | None = None
+
+
 class ScheduledTasksDueResponse(BaseModel):
     tasks: list[ScheduledTask]
+
+
+class ScheduledTaskRunsResponse(BaseModel):
+    runs: list[ScheduledTaskRun]
+
+
+class ScheduledTaskRunCreateRequest(BaseModel):
+    task_id: str = Field(min_length=1)
+    task_title: str = Field(min_length=1)
+    prompt: str = Field(min_length=1)
+
+
+class ScheduledTaskRunCreateResponse(BaseModel):
+    success: bool
+    run: ScheduledTaskRun | None = None
+    message: str
+
+
+class ScheduledTaskRunFinishRequest(BaseModel):
+    status: Literal["success", "error"] = "success"
+    response: str | None = None
+    error: str | None = None
+    knowledge_document: str | None = None
+
+
+class ScheduledTaskRunFinishResponse(BaseModel):
+    success: bool
+    run: ScheduledTaskRun | None = None
+    message: str
 
 
 class ScheduledTaskCompletedRequest(BaseModel):

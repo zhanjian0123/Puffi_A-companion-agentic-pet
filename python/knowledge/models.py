@@ -40,6 +40,8 @@ class KnowledgeUploadResult:
     skipped: int
     failed: int
     messages: list[str]
+    summary: str | None = None
+    keywords: list[str] | None = None
 
 
 @dataclass(slots=True)

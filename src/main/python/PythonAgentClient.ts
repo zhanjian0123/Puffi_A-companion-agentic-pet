@@ -46,6 +46,8 @@ export interface KnowledgeUploadResult {
   imported: number;
   skipped: number;
   failed: number;
+  summary?: string | null;
+  keywords?: string[];
 }
 
 export interface ReminderDueItem {
@@ -88,6 +90,35 @@ export interface ScheduledTasksDueResult {
 export interface ScheduledTaskCompletedResult {
   success: boolean;
   task?: ScheduledTaskItem | null;
+  message: string;
+}
+
+export interface ScheduledTaskRunItem {
+  id: string;
+  task_id: string;
+  task_title: string;
+  started_at: string;
+  status: string;
+  prompt: string;
+  finished_at?: string | null;
+  response?: string | null;
+  error?: string | null;
+  knowledge_document?: string | null;
+}
+
+export interface ScheduledTaskRunsResult {
+  runs: ScheduledTaskRunItem[];
+}
+
+export interface ScheduledTaskRunCreateResult {
+  success: boolean;
+  run?: ScheduledTaskRunItem | null;
+  message: string;
+}
+
+export interface ScheduledTaskRunFinishResult {
+  success: boolean;
+  run?: ScheduledTaskRunItem | null;
   message: string;
 }
 
@@ -134,6 +165,50 @@ export class PythonAgentClient {
   ): Promise<ScheduledTaskCompletedResult> {
     return this.requestJson<ScheduledTaskCompletedResult>(
       `/scheduled-tasks/${encodeURIComponent(taskId)}/completed`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  async scheduledTaskRuns(taskId?: string, limit?: number): Promise<ScheduledTaskRunsResult> {
+    const params = new URLSearchParams();
+    if (taskId) {
+      params.set('task_id', taskId);
+    }
+    if (typeof limit === 'number') {
+      params.set('limit', String(limit));
+    }
+
+    const search = params.toString();
+    return this.requestJson<ScheduledTaskRunsResult>(`/scheduled-task-runs${search ? `?${search}` : ''}`);
+  }
+
+  async createScheduledTaskRun(payload: {
+    task_id: string;
+    task_title: string;
+    prompt: string;
+  }): Promise<ScheduledTaskRunCreateResult> {
+    return this.requestJson<ScheduledTaskRunCreateResult>('/scheduled-task-runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async finishScheduledTaskRun(
+    runId: string,
+    payload: {
+      status: 'success' | 'error';
+      response?: string | null;
+      error?: string | null;
+      knowledge_document?: string | null;
+    }
+  ): Promise<ScheduledTaskRunFinishResult> {
+    return this.requestJson<ScheduledTaskRunFinishResult>(
+      `/scheduled-task-runs/${encodeURIComponent(runId)}/finish`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

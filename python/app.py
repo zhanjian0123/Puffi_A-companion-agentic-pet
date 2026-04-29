@@ -35,10 +35,16 @@ from schemas import (
     ScheduledTask,
     ScheduledTaskCompletedRequest,
     ScheduledTaskCompletedResponse,
+    ScheduledTaskRun,
+    ScheduledTaskRunCreateRequest,
+    ScheduledTaskRunCreateResponse,
+    ScheduledTaskRunFinishRequest,
+    ScheduledTaskRunFinishResponse,
+    ScheduledTaskRunsResponse,
     ScheduledTasksDueResponse,
 )
 from service import AgentService
-from tools.storage import ReminderItem, ScheduledTaskItem, tool_storage
+from tools.storage import ReminderItem, ScheduledTaskItem, ScheduledTaskRunItem, tool_storage
 
 agent_service = AgentService()
 knowledge_service = get_knowledge_service()
@@ -160,11 +166,13 @@ async def knowledge_upload(request: Request) -> KnowledgeUploadResponse:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
     return KnowledgeUploadResponse(
-        message="我记得这个文件了，它已经存在我的知识库里。",
+        message=format_knowledge_upload_message(result),
         filename=result.filename,
         imported=result.imported,
         skipped=result.skipped,
         failed=result.failed,
+        summary=result.summary,
+        keywords=result.keywords or [],
     )
 
 
@@ -276,6 +284,53 @@ async def scheduled_tasks_due() -> ScheduledTasksDueResponse:
     return ScheduledTasksDueResponse(tasks=[to_scheduled_task_response(task) for task in tasks])
 
 
+@app.get("/scheduled-task-runs", response_model=ScheduledTaskRunsResponse)
+async def scheduled_task_runs(
+    task_id: str | None = Query(default=None, min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> ScheduledTaskRunsResponse:
+    runs = await asyncio.to_thread(tool_storage.list_scheduled_task_runs, task_id, limit)
+    return ScheduledTaskRunsResponse(runs=[to_scheduled_task_run_response(run) for run in runs])
+
+
+@app.post("/scheduled-task-runs", response_model=ScheduledTaskRunCreateResponse)
+async def scheduled_task_run_create(request: ScheduledTaskRunCreateRequest) -> ScheduledTaskRunCreateResponse:
+    run = await asyncio.to_thread(
+        tool_storage.create_scheduled_task_run,
+        request.task_id,
+        request.task_title,
+        request.prompt,
+    )
+    return ScheduledTaskRunCreateResponse(
+        success=True,
+        run=to_scheduled_task_run_response(run),
+        message="自动任务执行记录已开始。",
+    )
+
+
+@app.post("/scheduled-task-runs/{run_id}/finish", response_model=ScheduledTaskRunFinishResponse)
+async def scheduled_task_run_finish(
+    run_id: str,
+    request: ScheduledTaskRunFinishRequest,
+) -> ScheduledTaskRunFinishResponse:
+    run = await asyncio.to_thread(
+        tool_storage.finish_scheduled_task_run,
+        run_id,
+        request.status,
+        request.response,
+        request.error,
+        request.knowledge_document,
+    )
+    if run is None:
+        return ScheduledTaskRunFinishResponse(success=False, run=None, message="没有找到该自动任务执行记录。")
+
+    return ScheduledTaskRunFinishResponse(
+        success=True,
+        run=to_scheduled_task_run_response(run),
+        message="自动任务执行记录已完成。",
+    )
+
+
 @app.post("/scheduled-tasks/{task_id}/completed", response_model=ScheduledTaskCompletedResponse)
 async def scheduled_task_completed(
     task_id: str,
@@ -313,6 +368,21 @@ def to_indexing_state_response(state) -> KnowledgeIndexingStateResponse | None:
     )
 
 
+def format_knowledge_upload_message(result) -> str:
+    lines = [f"我记得这个文件了：{result.filename}"]
+    if result.summary:
+        lines.extend(["", "摘要：", result.summary.strip()])
+
+    keywords = result.keywords or []
+    if keywords:
+        lines.extend(["", f"关键词：{'、'.join(keywords[:8])}"])
+
+    if result.failed:
+        lines.extend(["", "不过导入索引时有失败项，可以稍后重试或查看日志。"])
+
+    return "\n".join(lines)
+
+
 def to_reminder_response(reminder: ReminderItem) -> Reminder:
     return Reminder(
         id=reminder.id,
@@ -337,4 +407,19 @@ def to_scheduled_task_response(task: ScheduledTaskItem) -> ScheduledTask:
         last_run_at=task.last_run_at,
         last_status=task.last_status,
         last_error=task.last_error,
+    )
+
+
+def to_scheduled_task_run_response(run: ScheduledTaskRunItem) -> ScheduledTaskRun:
+    return ScheduledTaskRun(
+        id=run.id,
+        task_id=run.task_id,
+        task_title=run.task_title,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        status=run.status,
+        prompt=run.prompt,
+        response=run.response,
+        error=run.error,
+        knowledge_document=run.knowledge_document,
     )

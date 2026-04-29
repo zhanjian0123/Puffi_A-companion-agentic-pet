@@ -122,6 +122,49 @@ class ScheduledTaskItem:
         }
 
 
+@dataclass(slots=True)
+class ScheduledTaskRunItem:
+    id: str
+    task_id: str
+    task_title: str
+    started_at: str
+    status: str
+    prompt: str
+    finished_at: str | None = None
+    response: str | None = None
+    error: str | None = None
+    knowledge_document: str | None = None
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ScheduledTaskRunItem":
+        return cls(
+            id=str(value.get("id", "")),
+            task_id=str(value.get("task_id", "")),
+            task_title=str(value.get("task_title", "")),
+            started_at=str(value.get("started_at", "")),
+            status=str(value.get("status", "")),
+            prompt=str(value.get("prompt", "")),
+            finished_at=value.get("finished_at"),
+            response=value.get("response"),
+            error=value.get("error"),
+            knowledge_document=value.get("knowledge_document"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "task_id": self.task_id,
+            "task_title": self.task_title,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "status": self.status,
+            "prompt": self.prompt,
+            "response": self.response,
+            "error": self.error,
+            "knowledge_document": self.knowledge_document,
+        }
+
+
 class ToolStorage:
     def __init__(self) -> None:
         self._root = _resolve_tools_root()
@@ -135,6 +178,9 @@ class ToolStorage:
 
     def scheduled_tasks_path(self) -> Path:
         return self._resolve_controlled_file("scheduled_tasks.json")
+
+    def scheduled_task_runs_path(self) -> Path:
+        return self._resolve_controlled_file("scheduled_task_runs.json")
 
     def load_todos(self) -> list[TodoItem]:
         path = self.todos_path()
@@ -207,6 +253,102 @@ class ToolStorage:
 
     def new_scheduled_task_id(self) -> str:
         return f"task-{uuid4().hex[:12]}"
+
+    def load_scheduled_task_runs(self) -> list[ScheduledTaskRunItem]:
+        path = self.scheduled_task_runs_path()
+        if not path.exists():
+            return []
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return []
+
+        if not isinstance(payload, list):
+            return []
+
+        items = [ScheduledTaskRunItem.from_dict(item) for item in payload if isinstance(item, dict)]
+        return [item for item in items if item.id and item.task_id and item.started_at]
+
+    def save_scheduled_task_runs(self, items: list[ScheduledTaskRunItem]) -> None:
+        path = self.scheduled_task_runs_path()
+        payload = [item.to_dict() for item in items]
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def new_scheduled_task_run_id(self) -> str:
+        return f"run-{uuid4().hex[:12]}"
+
+    def create_scheduled_task_run(
+        self,
+        task_id: str,
+        task_title: str,
+        prompt: str,
+        started_at: datetime | None = None,
+    ) -> ScheduledTaskRunItem:
+        now = started_at or datetime.now().astimezone()
+        item = ScheduledTaskRunItem(
+            id=self.new_scheduled_task_run_id(),
+            task_id=task_id.strip(),
+            task_title=task_title.strip(),
+            started_at=now.isoformat(timespec="seconds"),
+            status="running",
+            prompt=prompt,
+        )
+
+        items = self.load_scheduled_task_runs()
+        items.append(item)
+        items.sort(key=lambda run: run.started_at, reverse=True)
+        self.save_scheduled_task_runs(items)
+        return item
+
+    def finish_scheduled_task_run(
+        self,
+        run_id: str,
+        status: str,
+        response: str | None = None,
+        error: str | None = None,
+        knowledge_document: str | None = None,
+        finished_at: datetime | None = None,
+    ) -> ScheduledTaskRunItem | None:
+        clean_id = run_id.strip()
+        if not clean_id:
+            return None
+
+        now = finished_at or datetime.now().astimezone()
+        clean_status = status.strip() or "success"
+        items = self.load_scheduled_task_runs()
+        matched: ScheduledTaskRunItem | None = None
+        for item in items:
+            if item.id != clean_id:
+                continue
+
+            item.finished_at = now.isoformat(timespec="seconds")
+            item.status = clean_status
+            item.response = response
+            item.error = error
+            item.knowledge_document = knowledge_document
+            matched = item
+            break
+
+        if matched is None:
+            return None
+
+        items.sort(key=lambda run: run.started_at, reverse=True)
+        self.save_scheduled_task_runs(items)
+        return matched
+
+    def list_scheduled_task_runs(
+        self,
+        task_id: str | None = None,
+        limit: int = 20,
+    ) -> list[ScheduledTaskRunItem]:
+        clean_task_id = task_id.strip() if task_id else ""
+        runs = self.load_scheduled_task_runs()
+        if clean_task_id:
+            runs = [run for run in runs if run.task_id == clean_task_id]
+
+        runs.sort(key=lambda run: run.started_at, reverse=True)
+        return runs[:limit]
 
     def create_daily_scheduled_task(
         self,

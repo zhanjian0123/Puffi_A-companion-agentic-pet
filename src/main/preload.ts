@@ -67,6 +67,8 @@ try {
         ipcRenderer.removeListener('scheduled-task:status', listener);
       };
     },
+    scheduledTaskRuns: (taskId?: string, limit?: number) =>
+      ipcRenderer.invoke('scheduled-task:runs', taskId, limit),
     onPetDockChange: (callback: (event: PetDockEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: PetDockEvent) => {
         callback(payload);

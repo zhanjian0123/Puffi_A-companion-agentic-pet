@@ -404,6 +404,10 @@ class KnowledgeService:
             original_filename=filename,
             markdown=markdown,
         )
+        upload_summary = self._summarize_uploaded_markdown(
+            title=Path(filename).stem,
+            markdown=markdown,
+        )
         markdown_path.write_text(markdown_text, encoding="utf-8")
         print(
             f"[Knowledge] convert success markdown={markdown_path} chars={len(markdown_text)}",
@@ -427,6 +431,8 @@ class KnowledgeService:
             skipped=import_result.skipped,
             failed=import_result.failed,
             messages=import_result.messages,
+            summary=upload_summary.summary,
+            keywords=upload_summary.keywords,
         )
 
     def _delete_document_sync(self, path: str) -> KnowledgeDeleteResult:
@@ -889,6 +895,10 @@ class KnowledgeService:
             "---\n\n"
             f"{markdown}\n"
         )
+
+    def _summarize_uploaded_markdown(self, *, title: str, markdown: str):
+        normalized = re.sub(r"\s+", " ", markdown).strip()
+        return self._summarizer.summarize_preview(title=title, text=normalized)
 
 
 _knowledge_service: KnowledgeService | None = None

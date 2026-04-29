@@ -128,6 +128,10 @@ export function registerIpcHandlers(agentClient: PythonAgentClient, windows: Win
     }
   });
 
+  ipcMain.handle('scheduled-task:runs', async (_event, taskId?: string, limit?: number) => {
+    return agentClient.scheduledTaskRuns(taskId, limit);
+  });
+
   ipcMain.handle('window:set-panel-open', async (_event, isOpen: boolean) => {
     if (isOpen) {
       windows.openPanel();

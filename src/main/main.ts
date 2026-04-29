@@ -109,8 +109,18 @@ async function showScheduledTask(task: ScheduledTaskItem): Promise<boolean> {
 
   petWindow.setAlwaysOnTop(true, 'screen-saver');
   petWindow.showInactive();
-  openPanelWindow();
   return true;
+}
+
+async function showScheduledTaskResult(task: ScheduledTaskItem): Promise<void> {
+  void task;
+  if (!petWindow || petWindow.isDestroyed()) {
+    return;
+  }
+
+  petWindow.setAlwaysOnTop(true, 'screen-saver');
+  petWindow.showInactive();
+  openPanelWindow();
 }
 
 app.whenReady().then(async () => {
@@ -134,6 +144,7 @@ app.whenReady().then(async () => {
   scheduledTaskRunner = new ScheduledTaskRunner({
     agentClient: services.agentClient,
     onTaskDue: showScheduledTask,
+    onTaskFinished: showScheduledTaskResult,
   });
   scheduledTaskRunner.start();
   console.log('[Main] Core initialized');
