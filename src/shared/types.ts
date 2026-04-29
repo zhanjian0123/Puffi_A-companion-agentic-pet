@@ -32,6 +32,13 @@ export interface ReminderDueEvent {
   remindAt: string;
 }
 
+export interface ScheduledTaskStatusEvent {
+  taskId: string;
+  title: string;
+  status: 'running' | 'done' | 'error';
+  content?: string;
+}
+
 export interface PetDockEvent {
   side: PetDockSide;
 }
@@ -44,6 +51,7 @@ export interface ElectronAPI {
   uploadKnowledgeFile: (file: unknown, requestId: string) => Promise<{ message: string }>;
   onKnowledgeUploadProgress: (callback: (event: KnowledgeUploadProgressEvent) => void) => () => void;
   onReminderDue: (callback: (event: ReminderDueEvent) => void) => () => void;
+  onScheduledTaskStatus: (callback: (event: ScheduledTaskStatusEvent) => void) => () => void;
   onPetDockChange: (callback: (event: PetDockEvent) => void) => () => void;
   setPanelOpen: (isOpen: boolean) => Promise<{ success: boolean }>;
   togglePanel: () => Promise<{ success: boolean; isOpen: boolean }>;

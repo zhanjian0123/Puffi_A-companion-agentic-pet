@@ -182,3 +182,31 @@ class ReminderNotifiedResponse(BaseModel):
     success: bool
     reminder: Reminder | None = None
     message: str
+
+
+class ScheduledTask(BaseModel):
+    id: str
+    title: str
+    enabled: bool
+    schedule: dict[str, Any]
+    action: dict[str, Any]
+    next_run_at: str
+    created_at: str
+    last_run_at: str | None = None
+    last_status: str | None = None
+    last_error: str | None = None
+
+
+class ScheduledTasksDueResponse(BaseModel):
+    tasks: list[ScheduledTask]
+
+
+class ScheduledTaskCompletedRequest(BaseModel):
+    success: bool = True
+    error: str | None = None
+
+
+class ScheduledTaskCompletedResponse(BaseModel):
+    success: bool
+    task: ScheduledTask | None = None
+    message: str

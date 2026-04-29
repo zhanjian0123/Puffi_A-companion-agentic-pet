@@ -11,14 +11,18 @@ from tools.layer1.get_current_time import get_current_time
 from tools.layer1.knowledge_search import knowledge_search
 from tools.layer1.list_knowledge_documents import list_knowledge_documents
 from tools.layer1.list_reminders import list_reminders
+from tools.layer1.list_scheduled_tasks import list_scheduled_tasks
 from tools.layer1.list_todos import list_todos
 from tools.layer2.add_reminder import add_reminder
+from tools.layer2.add_scheduled_task import add_scheduled_task
 from tools.layer2.add_todo import add_todo
 from tools.layer2.complete_reminder import complete_reminder
 from tools.layer2.complete_todo import complete_todo
 from tools.layer2.create_or_update_skill import create_or_update_skill
 from tools.layer2.delete_knowledge_document import delete_knowledge_document
+from tools.layer2.pause_scheduled_task import pause_scheduled_task
 from tools.layer2.remove_reminder import remove_reminder
+from tools.layer2.remove_scheduled_task import remove_scheduled_task
 from tools.layer2.remove_todo import remove_todo
 from tools.layer2.write_knowledge_note import write_knowledge_note
 
@@ -28,6 +32,7 @@ SAFE_READ_ONLY_TOOLS: list[Tool] = [
     get_current_date,
     list_todos,
     list_reminders,
+    list_scheduled_tasks,
     knowledge_search,
     list_knowledge_documents,
 ]
@@ -35,10 +40,13 @@ SAFE_READ_ONLY_TOOLS: list[Tool] = [
 CONTROLLED_WRITE_TOOLS: list[Tool] = [
     add_todo,
     add_reminder,
+    add_scheduled_task,
     complete_todo,
     complete_reminder,
+    pause_scheduled_task,
     remove_todo,
     remove_reminder,
+    remove_scheduled_task,
     create_or_update_skill,
     write_knowledge_note,
     delete_knowledge_document,

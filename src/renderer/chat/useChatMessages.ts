@@ -28,6 +28,7 @@ export function useChatMessages({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const activeStreamRef = useRef<ActiveStream | null>(null);
+  const scheduledTaskMessageIdsRef = useRef(new Map<string, string>());
   const pendingDeltaRef = useRef('');
   const flushTimerRef = useRef<number | null>(null);
 
@@ -143,6 +144,85 @@ export function useChatMessages({
       unsubscribeChat();
     };
   }, [clearFlushTimer, flushPendingDelta, onDone, onError, onPetState, scheduleStreamFlush]);
+
+  useEffect(() => {
+    const unsubscribeScheduledTask = requireElectronApi().onScheduledTaskStatus((event) => {
+      const existingMessageId = scheduledTaskMessageIdsRef.current.get(event.taskId);
+
+      if (event.status === 'running') {
+        onPetState?.('searching');
+        const messageId = existingMessageId ?? createMessageId();
+        scheduledTaskMessageIdsRef.current.set(event.taskId, messageId);
+        setIsLoading(true);
+        setMessages((prev) => {
+          if (prev.some((message) => message.id === messageId)) {
+            return prev.map((message) =>
+              message.id === messageId
+                ? {
+                    ...message,
+                    content: `正在执行自动任务：${event.title}...`,
+                    streaming: true,
+                  }
+                : message
+            );
+          }
+
+          return [
+            ...prev,
+            {
+              id: messageId,
+              role: 'assistant',
+              content: `正在执行自动任务：${event.title}...`,
+              streaming: true,
+            },
+          ];
+        });
+        return;
+      }
+
+      const content =
+        event.status === 'error'
+          ? `自动任务「${event.title}」执行失败：${event.content || '未知错误'}`
+          : event.content || `自动任务「${event.title}」已完成。`;
+      const messageId = existingMessageId ?? createMessageId();
+      scheduledTaskMessageIdsRef.current.delete(event.taskId);
+      setMessages((prev) => {
+        if (prev.some((message) => message.id === messageId)) {
+          return prev.map((message) =>
+            message.id === messageId
+              ? {
+                  ...message,
+                  content,
+                  streaming: false,
+                }
+              : message
+          );
+        }
+
+        return [
+          ...prev,
+          {
+            id: messageId,
+            role: 'assistant',
+            content,
+            streaming: false,
+          },
+        ];
+      });
+      setIsLoading(false);
+      if (event.status === 'error') {
+        onPetState?.('error');
+        onError?.();
+      } else {
+        onPetState?.('success');
+        onDone?.();
+      }
+    });
+
+    return () => {
+      unsubscribeScheduledTask();
+    };
+  }, [onDone, onError, onPetState]);
 
   useEffect(() => {
     if (!shouldLoadHistory) {

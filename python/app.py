@@ -32,9 +32,13 @@ from schemas import (
     Reminder,
     ReminderNotifiedResponse,
     RemindersDueResponse,
+    ScheduledTask,
+    ScheduledTaskCompletedRequest,
+    ScheduledTaskCompletedResponse,
+    ScheduledTasksDueResponse,
 )
 from service import AgentService
-from tools.storage import ReminderItem, tool_storage
+from tools.storage import ReminderItem, ScheduledTaskItem, tool_storage
 
 agent_service = AgentService()
 knowledge_service = get_knowledge_service()
@@ -266,6 +270,33 @@ async def reminder_notified(reminder_id: str) -> ReminderNotifiedResponse:
     )
 
 
+@app.get("/scheduled-tasks/due", response_model=ScheduledTasksDueResponse)
+async def scheduled_tasks_due() -> ScheduledTasksDueResponse:
+    tasks = await asyncio.to_thread(tool_storage.due_scheduled_tasks)
+    return ScheduledTasksDueResponse(tasks=[to_scheduled_task_response(task) for task in tasks])
+
+
+@app.post("/scheduled-tasks/{task_id}/completed", response_model=ScheduledTaskCompletedResponse)
+async def scheduled_task_completed(
+    task_id: str,
+    request: ScheduledTaskCompletedRequest,
+) -> ScheduledTaskCompletedResponse:
+    task = await asyncio.to_thread(
+        tool_storage.mark_scheduled_task_completed,
+        task_id,
+        request.success,
+        request.error,
+    )
+    if task is None:
+        return ScheduledTaskCompletedResponse(success=False, task=None, message="没有找到该自动任务。")
+
+    return ScheduledTaskCompletedResponse(
+        success=True,
+        task=to_scheduled_task_response(task),
+        message="自动任务已更新下次执行时间。",
+    )
+
+
 def to_indexing_state_response(state) -> KnowledgeIndexingStateResponse | None:
     if state is None:
         return None
@@ -291,4 +322,19 @@ def to_reminder_response(reminder: ReminderItem) -> Reminder:
         created_at=reminder.created_at,
         completed_at=reminder.completed_at,
         notified_at=reminder.notified_at,
+    )
+
+
+def to_scheduled_task_response(task: ScheduledTaskItem) -> ScheduledTask:
+    return ScheduledTask(
+        id=task.id,
+        title=task.title,
+        enabled=task.enabled,
+        schedule=task.schedule,
+        action=task.action,
+        next_run_at=task.next_run_at,
+        created_at=task.created_at,
+        last_run_at=task.last_run_at,
+        last_status=task.last_status,
+        last_error=task.last_error,
     )

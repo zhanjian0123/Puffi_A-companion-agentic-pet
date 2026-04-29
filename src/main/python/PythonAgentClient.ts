@@ -68,6 +68,29 @@ export interface ReminderNotifiedResult {
   message: string;
 }
 
+export interface ScheduledTaskItem {
+  id: string;
+  title: string;
+  enabled: boolean;
+  schedule: Record<string, unknown>;
+  action: Record<string, unknown>;
+  next_run_at: string;
+  created_at: string;
+  last_run_at?: string | null;
+  last_status?: string | null;
+  last_error?: string | null;
+}
+
+export interface ScheduledTasksDueResult {
+  tasks: ScheduledTaskItem[];
+}
+
+export interface ScheduledTaskCompletedResult {
+  success: boolean;
+  task?: ScheduledTaskItem | null;
+  message: string;
+}
+
 export class PythonAgentClient {
   constructor(private readonly options: PythonAgentClientOptions) {}
 
@@ -97,6 +120,24 @@ export class PythonAgentClient {
       `/reminders/${encodeURIComponent(reminderId)}/notified`,
       {
         method: 'POST',
+      }
+    );
+  }
+
+  async dueScheduledTasks(): Promise<ScheduledTasksDueResult> {
+    return this.requestJson<ScheduledTasksDueResult>('/scheduled-tasks/due');
+  }
+
+  async markScheduledTaskCompleted(
+    taskId: string,
+    payload: { success: boolean; error?: string | null }
+  ): Promise<ScheduledTaskCompletedResult> {
+    return this.requestJson<ScheduledTaskCompletedResult>(
+      `/scheduled-tasks/${encodeURIComponent(taskId)}/completed`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       }
     );
   }

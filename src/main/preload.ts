@@ -5,6 +5,7 @@ import type {
   KnowledgeUploadProgressEvent,
   PetDockEvent,
   ReminderDueEvent,
+  ScheduledTaskStatusEvent,
 } from '../shared/types';
 
 try {
@@ -53,6 +54,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener('reminder:due', listener);
+      };
+    },
+    onScheduledTaskStatus: (callback: (event: ScheduledTaskStatusEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: ScheduledTaskStatusEvent) => {
+        callback(payload);
+      };
+
+      ipcRenderer.on('scheduled-task:status', listener);
+
+      return () => {
+        ipcRenderer.removeListener('scheduled-task:status', listener);
       };
     },
     onPetDockChange: (callback: (event: PetDockEvent) => void) => {

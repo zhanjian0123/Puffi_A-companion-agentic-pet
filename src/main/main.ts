@@ -4,10 +4,13 @@ import { bootstrapApp } from './bootstrap';
 import { registerIpcHandlers } from './ipc/registerHandlers';
 import { ReminderScheduler } from './reminders/ReminderScheduler';
 import type { ReminderDueItem } from './python/PythonAgentClient';
+import { ScheduledTaskRunner } from './scheduledTasks/ScheduledTaskRunner';
+import type { ScheduledTaskItem } from './python/PythonAgentClient';
 
 let petWindow: BrowserWindow | null = null;
 let panelWindow: BrowserWindow | null = null;
 let reminderScheduler: ReminderScheduler | null = null;
+let scheduledTaskRunner: ScheduledTaskRunner | null = null;
 
 function syncPanelWindowToPet(): void {
   if (petWindow && panelWindow && !petWindow.isDestroyed() && !panelWindow.isDestroyed() && panelWindow.isVisible()) {
@@ -98,6 +101,18 @@ async function showReminder(reminder: ReminderDueItem): Promise<boolean> {
   return true;
 }
 
+async function showScheduledTask(task: ScheduledTaskItem): Promise<boolean> {
+  void task;
+  if (!petWindow || petWindow.isDestroyed()) {
+    return false;
+  }
+
+  petWindow.setAlwaysOnTop(true, 'screen-saver');
+  petWindow.showInactive();
+  openPanelWindow();
+  return true;
+}
+
 app.whenReady().then(async () => {
   console.log('[Main] App ready');
   const services = await bootstrapApp();
@@ -116,6 +131,11 @@ app.whenReady().then(async () => {
     onReminderDue: showReminder,
   });
   reminderScheduler.start();
+  scheduledTaskRunner = new ScheduledTaskRunner({
+    agentClient: services.agentClient,
+    onTaskDue: showScheduledTask,
+  });
+  scheduledTaskRunner.start();
   console.log('[Main] Core initialized');
 
   app.on('activate', () => {
@@ -136,6 +156,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   reminderScheduler?.stop();
   reminderScheduler = null;
+  scheduledTaskRunner?.stop();
+  scheduledTaskRunner = null;
 });
 
 process.on('uncaughtException', (error) => {
