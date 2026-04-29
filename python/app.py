@@ -166,13 +166,11 @@ async def knowledge_upload(request: Request) -> KnowledgeUploadResponse:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
     return KnowledgeUploadResponse(
-        message=format_knowledge_upload_message(result),
+        message="我记得这个文件了，它已经存在我的知识库里。",
         filename=result.filename,
         imported=result.imported,
         skipped=result.skipped,
         failed=result.failed,
-        summary=result.summary,
-        keywords=result.keywords or [],
     )
 
 
@@ -366,21 +364,6 @@ def to_indexing_state_response(state) -> KnowledgeIndexingStateResponse | None:
         messages=state.messages or [],
         last_error=state.last_error,
     )
-
-
-def format_knowledge_upload_message(result) -> str:
-    lines = [f"我记得这个文件了：{result.filename}"]
-    if result.summary:
-        lines.extend(["", "摘要：", result.summary.strip()])
-
-    keywords = result.keywords or []
-    if keywords:
-        lines.extend(["", f"关键词：{'、'.join(keywords[:8])}"])
-
-    if result.failed:
-        lines.extend(["", "不过导入索引时有失败项，可以稍后重试或查看日志。"])
-
-    return "\n".join(lines)
 
 
 def to_reminder_response(reminder: ReminderItem) -> Reminder:

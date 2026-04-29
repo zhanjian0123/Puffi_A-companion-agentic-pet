@@ -82,8 +82,6 @@ class KnowledgeUploadResponse(BaseModel):
     imported: int
     skipped: int
     failed: int
-    summary: str | None = None
-    keywords: list[str] = Field(default_factory=list)
 
 
 class KnowledgeQueryRequest(BaseModel):

@@ -46,8 +46,6 @@ export interface KnowledgeUploadResult {
   imported: number;
   skipped: number;
   failed: number;
-  summary?: string | null;
-  keywords?: string[];
 }
 
 export interface ReminderDueItem {
