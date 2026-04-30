@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 import json
 import re
 
 from config import settings
+from interaction_state import InteractionStateStore
 from memory import MemoryService
 from mcp_servers import build_mcp_servers
 from schemas import ChatRequest, ChatResponse, ChatStreamEvent, HealthResponse, HistoryResponse
@@ -72,6 +74,16 @@ Skill 规则：
 """
 
 
+@dataclass(slots=True)
+class RuntimeState:
+    mode: str
+    runtime_context: str
+    acknowledgement: str
+    short_circuit: bool
+    should_track_user_chat: bool
+    started_at: datetime
+
+
 class AgentService:
     def __init__(self) -> None:
         self._session_store = AgentSessionStore(
@@ -93,6 +105,7 @@ class AgentService:
             auto_capture=settings.memory_auto_capture,
             enabled=settings.memory_enabled,
         )
+        self._interaction_state = InteractionStateStore()
         self._tools = build_agent_tools()
         self._mcp_servers = build_mcp_servers()
         self._mcp_connected = False
@@ -176,11 +189,12 @@ class AgentService:
         return HistoryResponse(messages=messages)
 
     async def chat_stream(self, request: ChatRequest) -> AsyncIterator[ChatStreamEvent]:
-        runtime_context, acknowledgement, short_circuit = await self._prepare_memory_state(request)
-        if short_circuit:
+        runtime_state = await self._prepare_runtime_state(request)
+        if runtime_state.short_circuit:
             yield ChatStreamEvent(type="state", pet_state="tooling")
-            yield ChatStreamEvent(type="delta", delta=acknowledgement or "已处理记忆请求。")
+            yield ChatStreamEvent(type="delta", delta=runtime_state.acknowledgement or "已处理记忆请求。")
             yield ChatStreamEvent(type="done", pet_state="success")
+            await self._mark_user_chat_completed(runtime_state)
             return
 
         if not self.sdk_installed:
@@ -210,7 +224,7 @@ class AgentService:
             )
             return
 
-        agent = self._build_agent_for_runtime_context(runtime_context)
+        agent = self._build_agent_for_runtime_context(runtime_state.runtime_context)
 
         result = Runner.run_streamed(
             agent,
@@ -225,9 +239,9 @@ class AgentService:
         try:
             yield ChatStreamEvent(type="state", pet_state=current_pet_state)
 
-            if acknowledgement:
+            if runtime_state.acknowledgement:
                 emitted_text = True
-                yield ChatStreamEvent(type="delta", delta=f"{acknowledgement}\n\n")
+                yield ChatStreamEvent(type="delta", delta=f"{runtime_state.acknowledgement}\n\n")
 
             async for event in result.stream_events():
                 next_pet_state = self._extract_pet_state_from_stream_event(event)
@@ -250,8 +264,8 @@ class AgentService:
                     fallback_text = self._fallback_text_from_run_result(result, request.message)
                 if fallback_text:
                     yield ChatStreamEvent(type="delta", delta=fallback_text)
-                elif acknowledgement:
-                    yield ChatStreamEvent(type="delta", delta=acknowledgement)
+                elif runtime_state.acknowledgement:
+                    yield ChatStreamEvent(type="delta", delta=runtime_state.acknowledgement)
                 elif self._is_missing_final_response_error(result.run_loop_exception):
                     yield ChatStreamEvent(
                         type="delta",
@@ -265,13 +279,15 @@ class AgentService:
                         yield ChatStreamEvent(type="delta", delta=f"\n\n{fallback_text}")
 
             yield ChatStreamEvent(type="done", pet_state="success")
+            await self._mark_user_chat_completed(runtime_state)
         except Exception as error:
             yield ChatStreamEvent(type="error", message=f"模型调用失败：{error}", pet_state="error")
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
-        runtime_context, acknowledgement, short_circuit = await self._prepare_memory_state(request)
-        if short_circuit:
-            return ChatResponse(response=acknowledgement or "已处理记忆请求。")
+        runtime_state = await self._prepare_runtime_state(request)
+        if runtime_state.short_circuit:
+            await self._mark_user_chat_completed(runtime_state)
+            return ChatResponse(response=runtime_state.acknowledgement or "已处理记忆请求。")
 
         if not self.sdk_installed:
             return ChatResponse(
@@ -287,7 +303,7 @@ class AgentService:
         if self._agent is None or Runner is None:
             return ChatResponse(response="Agent 初始化失败，请检查模型和 base URL 配置。")
 
-        agent = self._build_agent_for_runtime_context(runtime_context)
+        agent = self._build_agent_for_runtime_context(runtime_state.runtime_context)
 
         try:
             result = await Runner.run(
@@ -304,7 +320,8 @@ class AgentService:
                 raise
             response_text = "模型这次没有返回可用文本，请再发一次或换个完整问题试试。"
 
-        return ChatResponse(response=self._combine_memory_response(acknowledgement, response_text))
+        await self._mark_user_chat_completed(runtime_state)
+        return ChatResponse(response=self._combine_memory_response(runtime_state.acknowledgement, response_text))
 
     def _configure_client(self) -> None:
         if (
@@ -420,8 +437,18 @@ class AgentService:
 
         return self._mcp_manager.active_servers
 
-    async def _prepare_memory_state(self, request: ChatRequest) -> tuple[str, str, bool]:
+    async def _prepare_runtime_state(self, request: ChatRequest) -> RuntimeState:
         mode = self._normalize_mode(request.mode)
+        now = datetime.now().astimezone()
+        should_track_user_chat = mode == "chat"
+        temporal_context = ""
+        if should_track_user_chat:
+            interaction_state = await self._interaction_state.load()
+            temporal_context = self._format_temporal_context(
+                now=now,
+                last_user_chat_at=interaction_state.last_user_chat_at,
+            )
+
         command_results = await self._memory_service.apply_explicit_commands(
             message=request.message,
             mode=mode,
@@ -432,6 +459,8 @@ class AgentService:
         )
         runtime_context = self._format_runtime_context(
             mode=mode,
+            now=now,
+            temporal_context=temporal_context,
             memory_context=memory_context,
             command_messages=self._memory_service.format_runtime_notes(command_results),
         )
@@ -440,7 +469,14 @@ class AgentService:
             message=request.message,
             command_results=command_results,
         )
-        return runtime_context, acknowledgement, short_circuit
+        return RuntimeState(
+            mode=mode,
+            runtime_context=runtime_context,
+            acknowledgement=acknowledgement,
+            short_circuit=short_circuit,
+            should_track_user_chat=should_track_user_chat,
+            started_at=now,
+        )
 
     def _build_agent_for_runtime_context(self, runtime_context: str) -> Agent:
         if not runtime_context:
@@ -452,11 +488,16 @@ class AgentService:
         self,
         *,
         mode: str,
+        now: datetime,
+        temporal_context: str,
         memory_context: str,
         command_messages: list[str],
     ) -> str:
         sections = [f"当前模式：{mode}"]
-        sections.append(f"当前日期：{datetime.now().strftime('%Y-%m-%d')}")
+        sections.append(f"当前日期：{now.strftime('%Y-%m-%d')}")
+
+        if temporal_context:
+            sections.append(temporal_context)
 
         if command_messages:
             sections.append("本轮记忆操作结果：\n" + "\n".join(f"- {message}" for message in command_messages))
@@ -465,6 +506,71 @@ class AgentService:
             sections.append(memory_context)
 
         return "\n\n".join(sections)
+
+    def _format_temporal_context(self, *, now: datetime, last_user_chat_at: datetime | None) -> str:
+        weekday = self._format_weekday(now)
+        lines = [
+            "时间感知上下文：",
+            f"- 当前本地时间：{now.strftime('%Y-%m-%d %H:%M:%S')}，{weekday}。",
+        ]
+
+        if last_user_chat_at is None:
+            lines.extend(
+                [
+                    "- 上次用户对话时间：暂无记录，可能是首次对话或本地状态刚初始化。",
+                    "- 这是当前记录中的首次用户对话。",
+                ]
+            )
+        else:
+            last_local = last_user_chat_at.astimezone(now.tzinfo)
+            day_delta = (now.date() - last_local.date()).days
+            elapsed = max(now - last_local, timedelta())
+            lines.extend(
+                [
+                    f"- 上次用户对话时间：{last_local.strftime('%Y-%m-%d %H:%M:%S')}，{self._format_weekday(last_local)}。",
+                    f"- 距离上次用户对话已经过去：{self._format_elapsed(elapsed)}。",
+                    f"- 是否跨自然日：{'是' if day_delta > 0 else '否'}。",
+                    f"- 是否今天首次用户对话：{'是' if day_delta > 0 else '否'}。",
+                ]
+            )
+
+            if day_delta >= 1:
+                lines.append(f"- 距离上次用户对话已经过了 {day_delta} 个自然日。")
+
+        lines.extend(
+            [
+                "- 使用方式：你可以自然感知时间流逝，尤其是跨天、隔了多天、早晚问候或用户继续上次话题时。",
+                "- 不要机械复述这些时间字段；只有在对话自然需要时，轻轻体现“过了一段时间/又是新的一天”。",
+            ]
+        )
+        return "\n".join(lines)
+
+    def _format_weekday(self, value: datetime) -> str:
+        names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        return names[value.weekday()]
+
+    def _format_elapsed(self, elapsed: timedelta) -> str:
+        total_seconds = max(int(elapsed.total_seconds()), 0)
+        days, remainder = divmod(total_seconds, 24 * 60 * 60)
+        hours, remainder = divmod(remainder, 60 * 60)
+        minutes, seconds = divmod(remainder, 60)
+
+        parts: list[str] = []
+        if days:
+            parts.append(f"{days}天")
+        if hours:
+            parts.append(f"{hours}小时")
+        if minutes:
+            parts.append(f"{minutes}分钟")
+        if not parts:
+            parts.append(f"{seconds}秒")
+        return "".join(parts)
+
+    async def _mark_user_chat_completed(self, runtime_state: RuntimeState) -> None:
+        if not runtime_state.should_track_user_chat:
+            return
+
+        await self._interaction_state.update_last_user_chat_at(runtime_state.started_at)
 
     def _normalize_mode(self, mode: str) -> str:
         normalized = re.sub(r"[^a-zA-Z0-9_-]", "-", mode.strip().lower())
